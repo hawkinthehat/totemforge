@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TotemForge Neural Suite</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #070a0f;
+        --panel: rgba(18, 24, 34, 0.78);
+        --panelBorder: rgba(255, 255, 255, 0.08);
+        --text: rgba(245, 247, 255, 0.92);
+        --muted: rgba(245, 247, 255, 0.62);
+        --accent: #6ee7ff;
+        --danger: #ff6b8a;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: radial-gradient(1100px 700px at 50% 30%, rgba(110, 231, 255, 0.12), transparent 55%),
+          radial-gradient(900px 700px at 20% 70%, rgba(255, 107, 138, 0.09), transparent 55%),
+          var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+        overflow: hidden;
+      }
+
+      #gameCanvas {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+
+      .hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .topbar {
+        position: absolute;
+        left: 16px;
+        right: 16px;
+        top: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        pointer-events: none;
+      }
+
+      .brand {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        pointer-events: none;
+      }
+
+      .brand strong {
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-size: 12px;
+        color: rgba(245, 247, 255, 0.86);
+      }
+
+      .brand span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .modes {
+        display: flex;
+        gap: 10px;
+        padding: 10px;
+        border-radius: 14px;
+        background: var(--panel);
+        border: 1px solid var(--panelBorder);
+        box-shadow: var(--shadow);
+        pointer-events: auto;
+      }
+
+      .modes button {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(245, 247, 255, 0.9);
+        padding: 10px 12px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-weight: 650;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+        user-select: none;
+      }
+
+      .modes button:hover {
+        transform: translateY(-1px);
+        border-color: rgba(110, 231, 255, 0.45);
+        background: rgba(110, 231, 255, 0.12);
+      }
+
+      .modes button[aria-pressed="true"] {
+        border-color: rgba(110, 231, 255, 0.7);
+        background: rgba(110, 231, 255, 0.16);
+        box-shadow: 0 0 0 1px rgba(110, 231, 255, 0.2) inset;
+      }
+
+      #pacer-label {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        text-align: center;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        font-weight: 800;
+        font-size: 22px;
+        color: rgba(245, 247, 255, 0.86);
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45), 0 16px 70px rgba(0, 0, 0, 0.75);
+        mix-blend-mode: screen;
+        padding: 10px 14px;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        backdrop-filter: blur(8px);
+      }
+
+      .hint {
+        position: absolute;
+        left: 16px;
+        bottom: 14px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.28);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        color: rgba(245, 247, 255, 0.7);
+        font-size: 12px;
+        pointer-events: none;
+        max-width: min(560px, calc(100vw - 32px));
+      }
+
+      .kbd {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(245, 247, 255, 0.86);
+        font-weight: 700;
+        letter-spacing: 0.03em;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="hud" aria-hidden="false">
+      <div class="topbar">
+        <div class="brand">
+          <strong>TotemForge</strong>
+          <span>Neural Suite • Vagus Breath Totem • Click to cast</span>
+        </div>
+
+        <div class="modes" role="group" aria-label="Remedy Modes">
+          <button id="mode-weaver" type="button" data-mode="0" aria-pressed="true" title="SXT’EKW — Horizontal EMDR">
+            SXT’EKW
+          </button>
+          <button id="mode-osprey" type="button" data-mode="1" aria-pressed="false" title="KW’ÉKW’E — Saccadic grid">
+            KW’ÉKW’E
+          </button>
+          <button
+            id="mode-salmon"
+            type="button"
+            data-mode="2"
+            aria-pressed="false"
+            title="ST’ÉXEM — Salmon Run (Vertical vent)"
+            onclick="if (typeof setMode === 'function') setMode(2);"
+          >
+            ST’ÉXEM
+          </button>
+          <button id="mode-orca" type="button" data-mode="3" aria-pressed="false" title="KW’ÉTL’EN — Orbiting / spiral">
+            KW’ÉTL’EN
+          </button>
+        </div>
+      </div>
+
+      <div id="pacer-label">Inhale</div>
+
+      <div class="hint">
+        <span class="kbd">Click</span> to cast. <span class="kbd">ST’ÉXEM</span>: top-half snag → left screen; bottom-half → right.
+      </div>
+    </div>
+
+    <!-- Scripts at bottom; relative paths -->
+    <script src="js/config.js"></script>
+    <script src="js/haptics.js"></script>
+    <script src="js/geometry.js"></script>
+    <script src="js/physics.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/engine.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+Adjust the Log position in js/geometry.js or js/engine.js. Move the vertical center of the log down to canvas.height * 0.6. This will leave the top third of the screen clear for the breathing labels and the future top-tier animals."
+
+2. The "Painting" Saturation
+Right now, the red particles look like they are swirling around the log. They need to "stick" and stay.
+
+Cursor Prompt: "Update the fragment logic in js/physics.js. When a fragment reaches its target on the log, it should stop moving and stay visible at 100% opacity. This creates the 'painting' effect where the more you shatter, the more solid the Salmon becomes."
+
+3. Bilateral "Hit" Juice
+When you hit a Cedar Snag, the brain needs a "Reward Signal."
+
+Cursor Prompt: "Add 'Hit Juice' to js/engine.js. When a snag is successfully shattered, trigger a small screen shake (2-3px) and make the log's outline flash the color of the current mode (e.g., Salmon Blue or Osprey Rose) for 100ms."
+
+4. The "Level Up" Trigger
+You need a way to finish Level 1.
+
+Cursor Prompt: "Create a Level Up condition. When the total number of 'stuck' fragments on the log hits 400, trigger a 'Salmon Completion' event: the Salmon markings should glow brightly, and the pacer text should say 'GROUNDED'. Then, reset the fragment count and prepare the log for the Orca markings."
