@@ -3,7 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>TotemForge Neural Suite</title>
+    <meta name="theme-color" content="#070a0f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>TotemForge Neural Suite v1.0</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Inter:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
     <style>
       :root {
         color-scheme: dark;
@@ -54,6 +65,43 @@
         justify-content: space-between;
         gap: 12px;
         pointer-events: none;
+      }
+
+      .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        pointer-events: none;
+      }
+
+      #audio-mute-toggle {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(245, 247, 255, 0.9);
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        box-shadow: var(--shadow);
+        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+        pointer-events: auto;
+        flex-shrink: 0;
+      }
+
+      #audio-mute-toggle:hover {
+        transform: translateY(-1px);
+        border-color: rgba(110, 231, 255, 0.45);
+        background: rgba(110, 231, 255, 0.12);
+      }
+
+      #audio-mute-toggle[aria-pressed="true"] {
+        border-color: rgba(255, 107, 138, 0.55);
+        background: rgba(255, 107, 138, 0.12);
       }
 
       .brand {
@@ -120,9 +168,10 @@
         transform: translate(-50%, -50%);
         pointer-events: none;
         text-align: center;
+        font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         letter-spacing: 0.22em;
         text-transform: uppercase;
-        font-weight: 800;
+        font-weight: 700;
         font-size: 22px;
         color: rgba(245, 247, 255, 0.86);
         text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45), 0 16px 70px rgba(0, 0, 0, 0.75);
@@ -158,6 +207,251 @@
         font-weight: 700;
         letter-spacing: 0.03em;
       }
+
+      .suite-start-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: min(32px, 5vw);
+        box-sizing: border-box;
+        background: radial-gradient(ellipse 120% 80% at 50% 35%, rgba(18, 28, 42, 0.92), rgba(4, 6, 10, 0.96));
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        opacity: 1;
+        transition: opacity 0.48s ease;
+      }
+
+      .suite-start-overlay--exiting {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .suite-start-overlay[hidden] {
+        display: none !important;
+      }
+
+      .suite-start-card {
+        width: min(380px, 100%);
+        padding: 28px 26px;
+        border-radius: 18px;
+        background: var(--panel);
+        border: 1px solid var(--panelBorder);
+        box-shadow: var(--shadow);
+        text-align: center;
+        pointer-events: auto;
+      }
+
+      .suite-start-card--minimal {
+        padding: 22px 22px;
+      }
+
+      .suite-start-logo {
+        display: block;
+        margin: 0 auto 20px;
+        width: min(132px, 36vw);
+        height: auto;
+        border-radius: 22px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+      }
+
+      .suite-start-card--minimal .suite-start-logo {
+        width: 64px;
+        margin-bottom: 12px;
+      }
+
+      .suite-start-heading {
+        margin: 0 0 8px;
+        font-family: Inter, system-ui, sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: rgba(245, 247, 255, 0.94);
+      }
+
+      .suite-start-tagline {
+        margin: 0 0 12px;
+        font-size: 12px;
+        line-height: 1.45;
+        letter-spacing: 0.04em;
+        color: rgba(110, 231, 255, 0.82);
+        font-weight: 600;
+      }
+
+      .suite-start-sub {
+        margin: 0 0 22px;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--muted);
+      }
+
+      .suite-start-btn {
+        appearance: none;
+        width: 100%;
+        border: 1px solid rgba(110, 231, 255, 0.42);
+        background: rgba(110, 231, 255, 0.14);
+        color: rgba(245, 247, 255, 0.96);
+        padding: 14px 18px;
+        border-radius: 14px;
+        cursor: pointer;
+        font-family: Inter, system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: 0.04em;
+        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+      }
+
+      .suite-start-btn:hover {
+        transform: translateY(-1px);
+        border-color: rgba(110, 231, 255, 0.65);
+        background: rgba(110, 231, 255, 0.22);
+      }
+
+      .suite-start-btn:focus-visible {
+        outline: 2px solid rgba(110, 231, 255, 0.85);
+        outline-offset: 3px;
+      }
+
+      /* Salish first-run: contextual tips (snags 1–3), high-contrast readable type */
+      .salish-tooltip-root {
+        position: fixed;
+        left: 50%;
+        bottom: 88px;
+        transform: translateX(-50%) translateY(12px);
+        z-index: 96;
+        width: min(520px, calc(100vw - 28px));
+        max-height: min(46vh, 380px);
+        overflow-y: auto;
+        padding: 16px 18px;
+        border-radius: 16px;
+        background: rgba(5, 8, 14, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(110, 231, 255, 0.12) inset;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.55s ease, transform 0.55s ease;
+        -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
+      }
+
+      .salish-tooltip-root.salish-tip-visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      .salish-tooltip-root[hidden] {
+        display: none !important;
+      }
+
+      .salish-tooltip-inner {
+        font-family: Inter, system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.5;
+        color: #f1f5f9;
+        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
+      }
+
+      .salish-tip-plain {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.55;
+        letter-spacing: 0.01em;
+        color: #f8fafc;
+      }
+
+      .salish-tip-kicker {
+        margin: 0 0 10px;
+        font-family: "Cormorant Garamond", "Times New Roman", serif;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: #ffffff;
+        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+      }
+
+      .salish-tip-lead {
+        margin: 0 0 14px;
+        font-weight: 600;
+        color: #e2e8f0;
+      }
+
+      .salish-tip-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        margin: 0;
+      }
+
+      .salish-tip-table th,
+      .salish-tip-table td {
+        padding: 8px 10px;
+        text-align: left;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        vertical-align: top;
+      }
+
+      .salish-tip-table th {
+        font-weight: 700;
+        color: #f8fafc;
+        width: 34%;
+        font-size: 11px;
+        letter-spacing: 0.02em;
+      }
+
+      .salish-tip-table td {
+        color: #cbd5e1;
+      }
+
+      .salish-tip-table .salish-goal {
+        color: #94a3b8;
+        font-size: 11px;
+        display: block;
+        margin-top: 4px;
+      }
+
+      .salish-tip-table .salish-context {
+        font-family: "Cormorant Garamond", serif;
+        font-style: italic;
+        font-size: 13px;
+        color: #7dd3fc;
+      }
+
+      .salish-toast {
+        position: fixed;
+        bottom: 96px;
+        left: 50%;
+        z-index: 97;
+        max-width: min(440px, calc(100vw - 28px));
+        padding: 14px 18px;
+        border-radius: 14px;
+        background: rgba(5, 8, 14, 0.92);
+        border: 1px solid rgba(110, 231, 255, 0.42);
+        box-shadow: var(--shadow);
+        color: #f1f5f9;
+        font-family: "Cormorant Garamond", serif;
+        font-size: 17px;
+        font-weight: 600;
+        line-height: 1.45;
+        text-align: center;
+        opacity: 0;
+        transform: translateX(-50%) translateY(10px);
+        pointer-events: none;
+        transition: opacity 0.45s ease, transform 0.45s ease;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+      }
+
+      .salish-toast.salish-toast-visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+
+      .salish-toast[hidden] {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
@@ -167,29 +461,31 @@
       <div class="topbar">
         <div class="brand">
           <strong>TotemForge</strong>
-          <span>Neural Suite • Vagus Breath Totem • Click to cast</span>
+          <span>v1.0 • Neural Suite • Vagus breath • Click to cast</span>
         </div>
 
-        <div class="modes" role="group" aria-label="Remedy Modes">
-          <button id="mode-weaver" type="button" data-mode="0" aria-pressed="true" title="SXT’EKW — Horizontal EMDR">
-            SXT’EKW
-          </button>
-          <button id="mode-osprey" type="button" data-mode="1" aria-pressed="false" title="KW’ÉKW’E — Saccadic grid">
-            KW’ÉKW’E
-          </button>
+        <div class="topbar-right">
+          <div class="modes" role="group" aria-label="Remedy Modes">
+            <button id="mode-weaver" type="button" data-mode="0" aria-pressed="true" title="SXT’EKW — Horizontal EMDR">
+              SXT’EKW
+            </button>
+            <button id="mode-osprey" type="button" data-mode="1" aria-pressed="false" title="KW’ÉKW’E — Saccadic grid">
+              KW’ÉKW’E
+            </button>
+            <button id="mode-salmon" type="button" data-mode="2" aria-pressed="false" title="ST’ÉXEM — Salmon Run (Vertical vent)">
+              ST’ÉXEM
+            </button>
+            <button id="mode-orca" type="button" data-mode="3" aria-pressed="false" title="KW’ÉTL’EN — Orbiting / spiral">
+              KW’ÉTL’EN
+            </button>
+          </div>
           <button
-            id="mode-salmon"
+            id="audio-mute-toggle"
             type="button"
-            data-mode="2"
             aria-pressed="false"
-            title="ST’ÉXEM — Salmon Run (Vertical vent)"
-            onclick="if (typeof setMode === 'function') setMode(2);"
-          >
-            ST’ÉXEM
-          </button>
-          <button id="mode-orca" type="button" data-mode="3" aria-pressed="false" title="KW’ÉTL’EN — Orbiting / spiral">
-            KW’ÉTL’EN
-          </button>
+            aria-label="Mute suite audio"
+            title="Mute"
+          ></button>
         </div>
       </div>
 
@@ -197,8 +493,38 @@
 
       <div class="hint">
         <span class="kbd">Click</span> to cast. <span class="kbd">ST’ÉXEM</span>: top-half snag → left screen; bottom-half → right.
+        After the crown tier completes, press <span class="kbd">Esc</span> to reset.
       </div>
     </div>
+
+    <div
+      id="suite-start-overlay"
+      class="suite-start-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="suite-start-heading"
+    >
+      <div class="suite-start-card">
+        <img
+          class="suite-start-logo"
+          src="totemforge-logo-icon.png"
+          width="112"
+          height="112"
+          alt=""
+          decoding="async"
+        />
+        <h2 id="suite-start-heading" class="suite-start-heading">TotemForge</h2>
+        <p class="suite-start-tagline">Coast Salish formline • Breath • Carving</p>
+        <p class="suite-start-sub">Awaken sound and touch, then meet the Master Log on Salish Sea ground.</p>
+        <button type="button" id="suite-start-btn" class="suite-start-btn" autofocus>Begin the Forge</button>
+      </div>
+    </div>
+
+    <div id="salish-tooltip-root" class="salish-tooltip-root" hidden aria-live="polite" aria-hidden="true">
+      <div class="salish-tooltip-inner"></div>
+    </div>
+
+    <div id="salish-reveal-toast" class="salish-toast" hidden aria-live="polite" aria-hidden="true" role="status"></div>
 
     <!-- Scripts at bottom; relative paths -->
     <script src="js/config.js"></script>
@@ -207,5 +533,10 @@
     <script src="js/physics.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/engine.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+      }
+    </script>
   </body>
 </html>

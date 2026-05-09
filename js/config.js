@@ -1,5 +1,8 @@
 // TotemForge Neural Suite globals (declared here, shared across modules)
 
+/** Start overlay dismissed — enables gated `totemVibrate` calls (haptics.js). */
+if (typeof window !== "undefined") window.totemSuiteInteractive = false;
+
 // Canvas + context
 let canvas = null;
 let ctx = null;
@@ -64,22 +67,29 @@ const TOTEM_HARVEST_STICK_DURATION_MS = 1100;
 const FLOW_VAGUS_CYCLE_MS = 12000;
 const FLOW_VAGUS_INHALE_MS = 4000;
 
-/** Target spacing between snag *attempts* at zero streak (no Math.random jitter). */
-const CEDAR_FLOW_SPAWN_INTERVAL_BASE_MS = 1200;
-/** Keep attempts from feeling frantic: never spawn faster than the baseline. */
-const CEDAR_FLOW_SPAWN_INTERVAL_MIN_MS = 1200;
-const CEDAR_FLOW_SPAWN_INTERVAL_MAX_MS = 2400;
+/** Brisk Zen: steady rhythmic spawn cadence (1.5s between attempts when scaling is flat). */
+const CEDAR_FLOW_SPAWN_INTERVAL_BASE_MS = 1500;
+const CEDAR_FLOW_SPAWN_INTERVAL_MIN_MS = 1500;
+const CEDAR_FLOW_SPAWN_INTERVAL_MAX_MS = 1500;
 
-/** Every N successful clears: multiply spawn rate by this (interval ÷ multiplier). */
+/** Streak scaling disabled for v1.0 predictable pacing (interval stays at BASE when rate is 1). */
 const CEDAR_FLOW_SCALING_STEP_SHATTERS = 10;
-const CEDAR_FLOW_SCALING_RATE_PER_STEP = 1.05;
+const CEDAR_FLOW_SCALING_RATE_PER_STEP = 1;
 
 /**
- * Cross-flight duration from screen edge toward the Master Log (Tomahawk travelTargetSec).
- * Fixed 4s for a calm, predictable carve window.
+ * Brisk Zen: nominal edge→Master Log transit time (straight-line & Salmon vent initialization).
+ * EMDR / Orca wave / dive use distinct paths; cruise speeds still scale from this nominal duration.
  */
 const CEDAR_SNAG_TRAVEL_SEC_MIN = 4;
 const CEDAR_SNAG_TRAVEL_SEC_MAX = 4;
+
+/**
+ * Within this distance (px) of the log aim point, snag speed eases down toward MIN_SPEED_MUL.
+ */
+const CEDAR_SNAG_APPROACH_EASE_START_PX = 340;
+
+/** Speed multiplier at the aim point when fully inside the ease radius (smoothstep). */
+const CEDAR_SNAG_APPROACH_EASE_MIN_SPEED_MUL = 0.5;
 
 /** Snag motion targets this screen Y fraction — matches Master Log center (`geometry.js` drawMasterTotemLog). */
 const CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC = 0.6;
@@ -113,14 +123,24 @@ function resetCedarFlowDifficulty() {
 }
 
 /**
- * Snags move faster on inhale, slower on exhale (vagus sync).
- * During the 8s exhale, apply an extra 15% slowdown vs the prior exhale baseline (0.8 × 0.85).
+ * Inhale (4s): baseline snag speed multiplier. Exhale stays exactly 25% slower than inhale;
+ * inhale is chosen so exhale lands at 1.0 — a calm “floating” floor (never sluggish crawl).
  */
-const FLOW_VAGUS_EXHALE_VELOCITY_MUL = 0.68;
+const FLOW_VAGUS_INHALE_VELOCITY_MUL = 4 / 3;
+
+/** Exhale (8s): inhale × 0.75 ⇒ exactly 1.0 with inhale = 4/3 (25% reduction, brisk zen floor). */
+const FLOW_VAGUS_EXHALE_VELOCITY_MUL = FLOW_VAGUS_INHALE_VELOCITY_MUL * 0.75;
 
 function getVagusSnagVelocityMultiplier(nowMs = performance.now()) {
   const t = ((nowMs % FLOW_VAGUS_CYCLE_MS) + FLOW_VAGUS_CYCLE_MS) % FLOW_VAGUS_CYCLE_MS;
-  return t < FLOW_VAGUS_INHALE_MS ? 1.2 : FLOW_VAGUS_EXHALE_VELOCITY_MUL;
+  return t < FLOW_VAGUS_INHALE_MS ? FLOW_VAGUS_INHALE_VELOCITY_MUL : FLOW_VAGUS_EXHALE_VELOCITY_MUL;
+}
+
+/** Orca / Osprey tiers: +5% snag cruise speed per step above Salmon (1.0 → 1.05 → 1.10). */
+function getTotemTierSnagVelocityMultiplier(snagTotemLevel) {
+  const lv =
+    typeof snagTotemLevel === "number" ? Math.min(3, Math.max(1, snagTotemLevel | 0)) : 1;
+  return 1 + 0.05 * (lv - 1);
 }
 
 /** Random ∈ [min,max] seconds for travel pacing (called from Tomahawk). */
@@ -172,8 +192,32 @@ function finalizeSalmonTierSolid() {
   if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
 }
 
+/** Force Orca tier fully carved before Osprey ghost ascension. */
+function finalizeOrcaTierSolid() {
+  const pts = totemPointsByLevel?.[2];
+  const act = totemActivatedByLevel[2];
+  if (!pts?.length || !act?.length) return;
+  for (let i = 0; i < act.length; i++) {
+    act[i] = true;
+    if (pts[i]) pts[i].active = true;
+  }
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+/** Force Osprey tier fully carved at run finale (solid crown + stabilization read). */
+function finalizeOspreyTierSolid() {
+  const pts = totemPointsByLevel?.[3];
+  const act = totemActivatedByLevel[3];
+  if (!pts?.length || !act?.length) return;
+  for (let i = 0; i < act.length; i++) {
+    act[i] = true;
+    if (pts[i]) pts[i].active = true;
+  }
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
 /**
- * 0→1 ease during Orca ghost reveal window after Salmon ascension; 1 otherwise.
+ * 0→1 ease during ghost reveal after Salmon→Orca or Orca→Osprey ascension; 1 otherwise.
  * Cache should redraw while this is &lt; 1 for a smooth silhouette fade-in.
  */
 function totemOrcaAscensionGhostRamp(nowMs = performance.now()) {
@@ -192,11 +236,8 @@ function beginTotemSalmonAscension(nowMs = performance.now()) {
   totemSnagSpawnSuppressedUntilMs = nowMs + 3000;
   finalizeSalmonTierSolid();
   totemAscensionRevealStartMs = nowMs;
-  if (navigator.vibrate) {
-    try {
-      navigator.vibrate([100, 50, 100]);
-    } catch (_) {}
-  }
+  /** Salmon tier complete — long steady pulse (see haptics suite). */
+  if (typeof totemVibrate === "function") totemVibrate(200);
   levelUp(nowMs);
   const pan =
     typeof window !== "undefined" && typeof window.startTotemLevelIntroPan === "function"
@@ -359,6 +400,7 @@ function clearAllTotemActivated() {
   clearHarvestDestReserved();
   resetTotemAscensionState();
   resetSalmonHarvestPresentationState();
+  resetTotemRunCompletionState();
 }
 
 /** Foveal anchoring: spike when an EMDR snag crosses the vertical midline (engine decays). */
@@ -378,9 +420,19 @@ function bumpTotemLogOutlineFlash(nowMs = performance.now(), colorHex = "#ffffff
   totemLogOutlineFlashColor = String(colorHex || "#ffffff");
 }
 
+/**
+ * Completed animals slide down the log by ~this fraction of one tier block per step above them,
+ * so Salmon settles toward the log foot while the active ghost tier stays centered in view.
+ */
+const TOTEM_STACK_SLIDE_BLOCK_FRAC = 0.92;
+
 /** Cumulative salmon-tier harvest paints completed while on Level 1 (see physics Fragment harvest). */
 let salmonHarvestPaintLandCount = 0;
 const SALMON_PAINT_COMPLETION_THRESHOLD = 400;
+
+/** Orca (middle tier) — same 400 lands → slide tier + Osprey ghost (mirrors Salmon milestone). */
+let orcaHarvestPaintLandCount = 0;
+const ORCA_PAINT_COMPLETION_THRESHOLD = 400;
 
 /** Presentation windows after “Salmon Completion” paint milestone. */
 let totemSalmonCompletionGlowUntilMs = 0;
@@ -405,11 +457,110 @@ function maybeSalmonPaintCompletionAfterHarvestLand(nowMs = performance.now(), h
   beginTotemSalmonAscension(nowMs);
 }
 
+/**
+ * Orca → Osprey: 400 harvest paints on tier 2 — solid Orca block, camera pan, Osprey ghost ramp.
+ * Caller must run only when `totemLevel === 2`.
+ */
+function beginTotemOrcaAscension(nowMs = performance.now()) {
+  if (typeof totemLevel !== "number" || totemLevel !== 2) return;
+  totemSnagSpawnSuppressedUntilMs = nowMs + 3000;
+  finalizeOrcaTierSolid();
+  totemAscensionRevealStartMs = nowMs;
+  if (typeof totemVibrate === "function") totemVibrate(200);
+  levelUp(nowMs);
+  const pan =
+    typeof window !== "undefined" && typeof window.startTotemLevelIntroPan === "function"
+      ? window.startTotemLevelIntroPan
+      : null;
+  if (pan) pan(nowMs, totemLevel, { unlockHarvestNow: true });
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+function maybeOrcaPaintCompletionAfterHarvestLand(nowMs = performance.now(), harvestLevel) {
+  if (typeof totemLevel !== "number" || totemLevel !== 2) return;
+  if (harvestLevel !== 2) return;
+  orcaHarvestPaintLandCount++;
+  if (orcaHarvestPaintLandCount < ORCA_PAINT_COMPLETION_THRESHOLD) return;
+  orcaHarvestPaintLandCount = 0;
+  if (typeof fragments !== "undefined" && Array.isArray(fragments)) {
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const f = fragments[i];
+      if (f?.harvestPainted && f.harvestLevel === 2) fragments.splice(i, 1);
+    }
+  }
+  totemMidlineGlow = Math.max(typeof totemMidlineGlow === "number" ? totemMidlineGlow : 0, 3.5);
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+  beginTotemOrcaAscension(nowMs);
+}
+
 function resetSalmonHarvestPresentationState() {
   salmonHarvestPaintLandCount = 0;
+  orcaHarvestPaintLandCount = 0;
   totemSalmonCompletionGlowUntilMs = 0;
   _pacerGroundedTextUntilMs = 0;
   totemLogOutlineFlashUntilMs = 0;
+}
+
+/** Osprey (crown tier) paint completion — mirrors Salmon 400-stick milestone. */
+let ospreyHarvestPaintLandCount = 0;
+const OSPREY_PAINT_COMPLETION_THRESHOLD = 400;
+
+/** Run finale: stop snags until Escape reset; full-pole glow + STABILIZED pacer. */
+let totemRunComplete = false;
+let _pacerStabilizedTextUntilMs = 0;
+
+function maybeOspreyPaintCompletionAfterHarvestLand(nowMs = performance.now(), harvestLevel) {
+  if (totemRunComplete) return;
+  if (typeof totemLevel !== "number" || totemLevel !== 3) return;
+  if (harvestLevel !== 3) return;
+  ospreyHarvestPaintLandCount++;
+  if (ospreyHarvestPaintLandCount < OSPREY_PAINT_COMPLETION_THRESHOLD) return;
+  ospreyHarvestPaintLandCount = 0;
+  if (typeof fragments !== "undefined" && Array.isArray(fragments)) {
+    for (let i = fragments.length - 1; i >= 0; i--) {
+      const f = fragments[i];
+      if (f?.harvestPainted && f.harvestLevel === 3) fragments.splice(i, 1);
+    }
+  }
+  finalizeOspreyTierSolid();
+  totemRunComplete = true;
+  totemSnagSpawnSuppressedUntilMs = Number.MAX_SAFE_INTEGER;
+  totemMidlineGlow = Math.max(typeof totemMidlineGlow === "number" ? totemMidlineGlow : 0, 4.2);
+  _pacerStabilizedTextUntilMs = nowMs + 600000;
+  if (typeof totemVibrate === "function") totemVibrate([120, 80, 160]);
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+function resetTotemRunCompletionState() {
+  totemRunComplete = false;
+  ospreyHarvestPaintLandCount = 0;
+  _pacerStabilizedTextUntilMs = 0;
+  if (typeof totemSnagSpawnSuppressedUntilMs === "number" && totemSnagSpawnSuppressedUntilMs > 1e15) {
+    totemSnagSpawnSuppressedUntilMs = 0;
+  }
+}
+
+/**
+ * Vertical offset (px): slide finished tiers toward the log foot while the new ghost tier centers in view.
+ * Eases from 0 → target during `levelTransition` (Salmon→Orca / Orca→Osprey).
+ */
+function totemCompletedTierSlidePx(level, blockH, nowMs = performance.now()) {
+  if (typeof totemLevel !== "number" || level >= totemLevel) return 0;
+  const gap =
+    typeof TOTEM_STACK_SLIDE_BLOCK_FRAC === "number" ? TOTEM_STACK_SLIDE_BLOCK_FRAC : 0.92;
+  const target = blockH * gap * (totemLevel - level);
+
+  const trans =
+    typeof levelTransition !== "undefined" && levelTransition?.active ? levelTransition : null;
+  if (!trans?.active) return target;
+
+  const prog = Math.min(1, Math.max(0, (nowMs - trans.startMs) / Math.max(1, trans.durationMs)));
+  const easeT = 0.5 - 0.5 * Math.cos(Math.PI * prog);
+
+  if (trans.fromLevel === 1 && trans.toLevel === 2 && level === 1) return target * easeT;
+  if (trans.fromLevel === 2 && trans.toLevel === 3 && level <= 2) return target * easeT;
+
+  return target;
 }
 
 // Modes + constants
@@ -474,24 +625,37 @@ function normalizeModeId(modeId) {
   return MODE_NEURAL_WEAVER;
 }
 
-// Totem Pole progression (Salmon -> Orca -> Osprey)
-let totemLevel = 1; // 1..3 (1=Salmon, 2=Orca, 3=Osprey)
+/**
+ * Totem pole hierarchy: Base → Middle → Crown (three carved animals on one log).
+ * Indexed by totemLevel 1..3 — see TOTEM_LEVELS.
+ */
+const TOTEM_LEVEL_REGISTRY = Object.freeze({
+  1: { key: "SALMON", role: "base", label: "Salmon", anchor: "Groundedness" },
+  2: { key: "ORCA", role: "middle", label: "Orca", anchor: "Community & rhythm" },
+  3: { key: "OSPREY", role: "crown", label: "Osprey", anchor: "Vision & focus" },
+});
+
+// Totem Pole progression (Salmon base → Orca middle → Osprey crown)
+let totemLevel = 1; // 1..3
 const TOTEM_LEVELS = Object.freeze([
   null,
   {
     id: "SALMON",
+    tierRole: "base",
     label: "The Salmon (ST’ÉXEM)",
     focus: "Groundedness",
     threshold: TOTEM_EXPECTED_POINTS_PER_TIER,
   },
   {
     id: "ORCA",
+    tierRole: "middle",
     label: "The Orca (KW’ÉTL’EN)",
     focus: "Community & Rhythm",
     threshold: TOTEM_EXPECTED_POINTS_PER_TIER,
   },
   {
     id: "OSPREY",
+    tierRole: "crown",
     label: "The Osprey (KW’ÉKW’E)",
     focus: "Vision & Focus",
     threshold: TOTEM_EXPECTED_POINTS_PER_TIER,
@@ -546,4 +710,13 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
   setMode(currentMode);
+
+  const muteBtn = document.getElementById("audio-mute-toggle");
+  if (muteBtn) {
+    muteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (typeof toggleTotemAudioMuted === "function") toggleTotemAudioMuted();
+    });
+  }
+  if (typeof refreshTotemMuteButtonUi === "function") refreshTotemMuteButtonUi();
 });

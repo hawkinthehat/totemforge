@@ -6,6 +6,8 @@ const HAPTIC = Object.freeze({
   FRAGMENT_LAND_MIN_GAP_MS: 48,
   /** Contralateral / wrong-side error — double pulse (vibrate, gap, vibrate). */
   WRONG_SIDE: Object.freeze([40, 60, 40]),
+  /** End of inhale — log at max expansion (micro tick). */
+  INHALE_PEAK_MS: 6,
   /** Breath pacer: soft thrum at inhale phase boundary (eyes can stay on sweep). */
   PACER_INHALE_THRUM: Object.freeze([26, 80, 26]),
   /** Breath pacer: softer settling thrum at exhale boundary. */
@@ -18,7 +20,16 @@ let _lastFragmentLandMs = 0;
  * Central gate: avoids throwing on browsers without vibrate.
  * Short durations (5 ms) read as subtle ticks on motors that support crisp pulses.
  */
-function totemVibrate(pattern) {
+function totemSuiteHapticsEnabled() {
+  return typeof window !== "undefined" && window.totemSuiteInteractive === true;
+}
+
+/**
+ * @param {number|number[]} pattern
+ * @param {{ force?: boolean }} [opts] — `force` bypasses suite gate (internal / boot only).
+ */
+function totemVibrate(pattern, opts) {
+  if (!opts?.force && !totemSuiteHapticsEnabled()) return;
   if (typeof navigator === "undefined" || !navigator.vibrate) return;
   try {
     navigator.vibrate(pattern);
@@ -58,6 +69,11 @@ function hapticBreathPacerInhale() {
 
 function hapticBreathPacerExhale() {
   totemVibrate(HAPTIC.PACER_EXHALE_THRUM);
+}
+
+/** Master Log at peak inhale expansion (inhale → exhale boundary). */
+function hapticBreathInhalePeak() {
+  totemVibrate(HAPTIC.INHALE_PEAK_MS);
 }
 
 /** Wrong-side / contralateral miss — navigator.vibrate([50, 30, 50]). */

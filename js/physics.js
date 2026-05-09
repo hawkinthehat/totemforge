@@ -20,6 +20,26 @@ function snagPointerHitRadiusPx(snag) {
 }
 
 /** Strict contralateral: Salmon vent uses half-screen rules; other modes use snag side vs click side. */
+/**
+ * Smooth deceleration toward Master Log aim (cx, cy): full cruise outside ease radius,
+ * then ease down for a deliberate final carve.
+ */
+function cedarSnagApproachEaseMultiplier(distToCorePx) {
+  const start =
+    typeof CEDAR_SNAG_APPROACH_EASE_START_PX === "number"
+      ? CEDAR_SNAG_APPROACH_EASE_START_PX
+      : 340;
+  const minMul =
+    typeof CEDAR_SNAG_APPROACH_EASE_MIN_SPEED_MUL === "number"
+      ? CEDAR_SNAG_APPROACH_EASE_MIN_SPEED_MUL
+      : 0.5;
+  const d = Math.max(0, distToCorePx);
+  if (d >= start) return 1;
+  const u = d / Math.max(1e-3, start);
+  const s = u * u * (3 - 2 * u);
+  return minMul + (1 - minMul) * s;
+}
+
 function snagContralateralAllowsShatter(snag, canvasX, canvasY) {
   const w = window.innerWidth || 1;
   const h = window.innerHeight || 1;
@@ -39,6 +59,23 @@ function snagContralateralAllowsShatter(snag, canvasX, canvasY) {
  * Index of nearest snag under pointer within `snagPointerHitRadiusPx`, or -1.
  * Snags on the wrong contralateral side are ignored (must hit correct snag + correct side).
  */
+/** Nearest snag under pointer ignoring contralateral rules (for strict “wrong-side” feedback). */
+function findTomahawkSnagHitIndexUnfiltered(canvasX, canvasY) {
+  if (!tomahawks?.length) return -1;
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < tomahawks.length; i++) {
+    const s = tomahawks[i];
+    const R = snagPointerHitRadiusPx(s);
+    const d = Math.hypot(canvasX - s.x, canvasY - s.y);
+    if (d <= R && d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
 function findTomahawkSnagHitIndex(canvasX, canvasY) {
   if (!tomahawks?.length) return -1;
   let best = -1;
@@ -56,7 +93,12 @@ function findTomahawkSnagHitIndex(canvasX, canvasY) {
   return best;
 }
 
-// —— Cedar Snag flow-state spawn: fixed timer (~900ms baseline, scales with streak), max 2 living; Spiral ½ orbit gate.
+/** Short sharp bilateral-suite tick when a Cedar Snag shatters (engine.js). */
+function cedarSnapShatterHaptic() {
+  if (typeof totemVibrate === "function") totemVibrate(20);
+}
+
+// —— Cedar Snag flow-state spawn: fixed timer (1500ms baseline default, scales with streak), max 2 living; Spiral ½ orbit gate.
 
 const CEDAR_SNAG_MAX_ACTIVE = 2;
 
@@ -68,7 +110,7 @@ let _cedarEdgeSpawnFlip = true;
 
 function scheduleNextCedarSnagSpawn(nowMs) {
   const gap =
-    typeof getCedarSnagSpawnIntervalMs === "function" ? getCedarSnagSpawnIntervalMs() : 900;
+    typeof getCedarSnagSpawnIntervalMs === "function" ? getCedarSnagSpawnIntervalMs() : 1500;
   _cedarNextSpawnAtMs = nowMs + Math.max(1, gap);
 }
 
@@ -96,6 +138,7 @@ function cedarSpiralSpawnGateClear() {
 }
 
 function shouldAttemptCedarSnagSpawn(nowMs) {
+  if (typeof totemRunComplete !== "undefined" && totemRunComplete) return false;
   if (typeof totemSnagSpawnSuppressedUntilMs === "number" && nowMs < totemSnagSpawnSuppressedUntilMs)
     return false;
   if (countLivingTomahawks() >= CEDAR_SNAG_MAX_ACTIVE) return false;
@@ -116,7 +159,7 @@ function resetCedarFlowAfterMiss(nowMs = performance.now()) {
 
 function resetCedarSnagSpawnSchedule(nowMs = performance.now()) {
   const gap =
-    typeof getCedarSnagSpawnIntervalMs === "function" ? getCedarSnagSpawnIntervalMs() : 900;
+    typeof getCedarSnagSpawnIntervalMs === "function" ? getCedarSnagSpawnIntervalMs() : 1500;
   _cedarNextSpawnAtMs = nowMs + Math.max(1, gap);
 }
 
@@ -501,44 +544,47 @@ function normalizeSnagTotemLevel(lv) {
 function fragmentPaletteFromSnagLevel(lv) {
   const L = normalizeSnagTotemLevel(lv);
   if (L === 1) {
+    /** Level 1 Salmon — earthy red cedar carve */
     return {
-      harvestTrail: "rgba(231, 229, 228, 0.68)",
-      harvestEdge: "#57534e",
-      harvestCore: "#78716c",
-      harvestMid: "#a8a29e",
-      harvestGlow: "rgba(120, 113, 108, 0.42)",
-      harvestHi: "rgba(245, 245, 244, 0.9)",
-      splinterInk: "#57534e",
-      splinterAlt: "#44403c",
-      splinterGhost: "rgba(214, 211, 209, 0.58)",
-      splinterHi: "rgba(231, 229, 228, 0.5)",
+      harvestTrail: "rgba(254, 215, 170, 0.55)",
+      harvestEdge: "#431407",
+      harvestCore: "#7f1d1d",
+      harvestMid: "#b91c1c",
+      harvestGlow: "rgba(185, 28, 28, 0.48)",
+      harvestHi: "rgba(254, 226, 226, 0.88)",
+      splinterInk: "#451a03",
+      splinterAlt: "#57534e",
+      splinterGhost: "rgba(248, 113, 113, 0.42)",
+      splinterHi: "rgba(254, 202, 202, 0.55)",
     };
   }
   if (L === 2) {
+    /** Level 2 Orca — deep sea navy (#1e3a8a family) */
     return {
-      harvestTrail: "rgba(254, 243, 199, 0.72)",
-      harvestEdge: "#92400e",
-      harvestCore: "#b45309",
-      harvestMid: "#f59e0b",
-      harvestGlow: "rgba(251, 146, 60, 0.52)",
-      harvestHi: "rgba(255, 251, 235, 0.92)",
-      splinterInk: "#b45309",
-      splinterAlt: "#78350f",
-      splinterGhost: "rgba(251, 191, 36, 0.58)",
-      splinterHi: "rgba(253, 224, 171, 0.62)",
+      harvestTrail: "rgba(30, 58, 138, 0.48)",
+      harvestEdge: "#172554",
+      harvestCore: "#1e3a8a",
+      harvestMid: "#2563eb",
+      harvestGlow: "rgba(37, 99, 235, 0.42)",
+      harvestHi: "rgba(191, 219, 254, 0.9)",
+      splinterInk: "#1e3a8a",
+      splinterAlt: "#1d4ed8",
+      splinterGhost: "rgba(96, 165, 250, 0.4)",
+      splinterHi: "rgba(219, 234, 254, 0.62)",
     };
   }
+  /** Level 3 Osprey — silver (#f8fafc) + teal glow */
   return {
-    harvestTrail: "rgba(253, 186, 116, 0.78)",
-    harvestEdge: "#0c0a09",
-    harvestCore: "#292524",
-    harvestMid: "#ea580c",
-    harvestGlow: "rgba(249, 115, 22, 0.58)",
-    harvestHi: "rgba(253, 186, 116, 0.95)",
-    splinterInk: "#1c1917",
-    splinterAlt: "#292524",
-    splinterGhost: "rgba(251, 146, 60, 0.42)",
-    splinterHi: "rgba(251, 146, 60, 0.55)",
+    harvestTrail: "rgba(240, 253, 250, 0.58)",
+    harvestEdge: "#0f766e",
+    harvestCore: "#f8fafc",
+    harvestMid: "#ccfbf1",
+    harvestGlow: "rgba(45, 212, 191, 0.62)",
+    harvestHi: "rgba(255, 255, 255, 0.96)",
+    splinterInk: "#134e4a",
+    splinterAlt: "#14b8a6",
+    splinterGhost: "rgba(153, 246, 228, 0.52)",
+    splinterHi: "rgba(248, 250, 252, 0.78)",
   };
 }
 
@@ -571,9 +617,10 @@ function spawnHarvestFragments(originX, originY, hue, verticalVent, snagTotemLev
   }
   const ventSweep =
     currentMode === MODE_SALMON_RUN && lv === 1 && (verticalVent === "TOP" || verticalVent === "BOTTOM");
-  const spiralSweep = currentMode === MODE_ORCA_WISDOM;
+  const spiralSweep = currentMode === MODE_ORCA_WISDOM && lv !== 2;
+  const orcaWaveHarvestSweep = currentMode === MODE_ORCA_WISDOM && lv === 2;
   const fragmentHarvestSweep =
-    currentMode === MODE_NEURAL_WEAVER || ventSweep || spiralSweep;
+    currentMode === MODE_NEURAL_WEAVER || ventSweep || spiralSweep || orcaWaveHarvestSweep;
   const harvestCentripetal = spiralSweep;
   const vKick = ventSweep ? (verticalVent === "TOP" ? 1 : -1) : 0;
 
@@ -614,22 +661,29 @@ class Tomahawk {
     this.mode = opts?.mode ?? currentMode;
     this.hue = opts?.hue ?? modeHue(currentMode);
     this.snagTotemLevel = normalizeSnagTotemLevel(opts?.snagTotemLevel ?? totemLevel);
+    this.tierVelocityMul =
+      typeof getTotemTierSnagVelocityMultiplier === "function"
+        ? getTotemTierSnagVelocityMultiplier(this.snagTotemLevel)
+        : 1;
 
     // Inbound Physics Fix:
     // Spawn on screen edges and move TOWARD center using (target - origin).
     const cssW = window?.innerWidth ?? w;
     const cssH = window?.innerHeight ?? h;
     const cx = cssW * 0.5;
-    const cy = cssH * 0.52;
+    const travelYFrac =
+      typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number" ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC : 0.6;
+    const cy = cssH * travelYFrac;
 
     const margin = 24;
-    const lvl = typeof totemLevel === "number" ? totemLevel : 0;
-    const flowBoost = 1 + lvl * 0.12;
+    /** Brisk Zen: nominal 4s edge→log cruise (tierEnergyMul adds +5% per tier above Salmon). */
+    const flowBoost = 1;
+    const tierEnergyMul = this.tierVelocityMul ?? 1;
 
     this.seed = Math.random() * 9999;
-    this.speedVar = 0.8 + Math.random() * 0.4;
+    this.speedVar = 1;
     this.travelTargetSec =
-      typeof randomCedarSnagTravelSeconds === "function" ? randomCedarSnagTravelSeconds() : 3;
+      typeof randomCedarSnagTravelSeconds === "function" ? randomCedarSnagTravelSeconds() : 4;
     this._travelTargetPxPerSec = null;
 
     /** ST’ÉXEM Vertical Vent: spawn only off top or bottom; swim toward center (vertical emphasis). */
@@ -641,12 +695,46 @@ class Tomahawk {
       const dx = cx - this.x;
       const dy = cy - this.y;
       const d = Math.max(1, Math.hypot(dx, dy));
-      const speed = (d / Math.max(0.5, this.travelTargetSec)) * flowBoost * this.speedVar;
+      const speed =
+        (d / Math.max(0.5, this.travelTargetSec)) * flowBoost * this.speedVar * tierEnergyMul;
       this.vx = (dx / d) * speed * 0.42;
       this.vy = (dy / d) * speed;
       this._travelTargetPxPerSec = speed;
+    } else if (this.mode === MODE_ORCA_WISDOM && this.snagTotemLevel === 2) {
+      /** KW’ÉTL’EN (Orca tier): edge spawn + sinusoidal swell toward the log. */
+      const side = Math.random() < 0.5 ? -1 : 1;
+      this.x = side < 0 ? -margin : cssW + margin;
+      this.y = cy + (Math.random() - 0.5) * cssH * 0.4;
+      const dx = cx - this.x;
+      const dy = cy - this.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const spd =
+        (d / Math.max(0.5, this.travelTargetSec)) * flowBoost * this.speedVar * tierEnergyMul;
+      this.vx = (dx / d) * spd * 0.88;
+      this.vy = (dy / d) * spd * 0.88;
+      this._travelTargetPxPerSec = spd;
+      this.orcaWaveMode = true;
+      this.waveAmp = Math.min(58, cssW * 0.04);
+      this.waveFreq = 2.05 + Math.random() * 0.95;
+      this.wavePhaseAccum = this.seed * 0.31;
+    } else if (this.mode === MODE_ORCA_WISDOM && this.snagTotemLevel === 3) {
+      /** KW’ÉKW’E (Osprey tier): spawn high, dive toward aim point. */
+      this.ospreyDiveMode = true;
+      this.x = margin + Math.random() * Math.max(12, cssW - 2 * margin);
+      this.y = -margin - Math.random() * cssH * 0.36;
+      const dx = cx - this.x;
+      const dy = cy - this.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const spd =
+        (d / Math.max(0.5, this.travelTargetSec * 0.88)) *
+        flowBoost *
+        this.speedVar *
+        tierEnergyMul;
+      this.vx = (dx / d) * spd;
+      this.vy = (dy / d) * spd;
+      this._travelTargetPxPerSec = spd;
     } else if (this.mode === MODE_ORCA_WISDOM) {
-      /** KW’ÉTL’EN: logarithmic-style orbit — start at full canvas width, spiral inward. */
+      /** KW’ÉTL’EN: logarithmic-style orbit — spiral inward (non-Orca carve tier). */
       this.spiralCx = cx;
       this.spiralCy = cy;
       const canvasCssW =
@@ -672,10 +760,19 @@ class Tomahawk {
       }
 
       this.x = side === "LEFT" ? -margin : cssW + margin;
-      this.y =
-        this.mode === MODE_NEURAL_WEAVER || this.mode === MODE_OSPREY_SCOUT
-          ? clickY
-          : clamp(clickY, margin, cssH - margin);
+      if (
+        this.snagTotemLevel === 3 &&
+        this.mode !== MODE_NEURAL_WEAVER &&
+        this.mode !== MODE_OSPREY_SCOUT
+      ) {
+        this.y = -margin - Math.random() * cssH * 0.34;
+        this.ospreyDiveMode = true;
+      } else {
+        this.y =
+          this.mode === MODE_NEURAL_WEAVER || this.mode === MODE_OSPREY_SCOUT
+            ? clickY
+            : clamp(clickY, margin, cssH - margin);
+      }
 
       const tx = cx;
       const ty = cy;
@@ -690,14 +787,17 @@ class Tomahawk {
           220,
           Math.min(
             540,
-            (cssW * 2.55) / Math.max(0.6, this.travelTargetSec) * this.speedVar
+            ((cssW * 2.55) / Math.max(0.6, this.travelTargetSec)) *
+              this.speedVar *
+              tierEnergyMul
           )
         );
         const horiz = horizNominal * emdrPendulumSpeedMul(this.x, cssW);
         this.vx = this.emdrDir * horiz;
         this.vy = 0;
       } else {
-        const spd = (d / Math.max(0.5, this.travelTargetSec)) * flowBoost * this.speedVar;
+        const spd =
+          (d / Math.max(0.5, this.travelTargetSec)) * flowBoost * this.speedVar * tierEnergyMul;
         this.vx = (dx / d) * spd;
         this.vy = (dy / d) * spd;
         this._travelTargetPxPerSec = spd;
@@ -707,13 +807,17 @@ class Tomahawk {
     this.life = 0;
     // Spiral mode needs long life for multiple orbits + sink; minimum enforced here even if caller passes a shorter maxLife.
     this.maxLife = opts?.maxLife ?? 2200;
-    if (this.mode === MODE_ORCA_WISDOM) this.maxLife = Math.max(this.maxLife, 14000);
+    if (this.mode === MODE_ORCA_WISDOM && this.orcaWaveMode) this.maxLife = Math.max(this.maxLife, 9600);
+    if (this.mode === MODE_ORCA_WISDOM && this.ospreyDiveMode) this.maxLife = Math.max(this.maxLife, 5200);
+    if (this.mode === MODE_ORCA_WISDOM && !this.orcaWaveMode && !this.ospreyDiveMode)
+      this.maxLife = Math.max(this.maxLife, 14000);
 
     /** When set, snag is lerping into the totem (subtle pulse in draw); never “pop” off from lifetime fade. */
     this.snagSink = null;
 
     /** KW’ÉTL’EN: spiral inward → hold inner orbit (smooth pursuit) → sink */
-    this.orcaSpiralStage = this.mode === MODE_ORCA_WISDOM ? "IN" : null;
+    this.orcaSpiralStage =
+      this.mode === MODE_ORCA_WISDOM && !this.orcaWaveMode && !this.ospreyDiveMode ? "IN" : null;
     this._orcaOrbitAccum = 0;
 
     this.size = opts?.size ?? Math.max(18, Math.min(cssW, cssH) * 0.02);
@@ -792,13 +896,16 @@ class Tomahawk {
     const freezeOrcaTravel =
       this.mode === MODE_ORCA_WISDOM &&
       !this.snagSink &&
+      !this.orcaWaveMode &&
       (this.orcaSpiralStage === "IN" || this.orcaSpiralStage === "ORBIT");
     if (!freezeOrcaTravel) this.life += dtMs;
 
     const w = window.innerWidth;
     const h = window.innerHeight;
     const cx = w * 0.5;
-    const cy = h * 0.52;
+    const travelYFrac =
+      typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number" ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC : 0.6;
+    const cy = h * travelYFrac;
     const dtSec = dtMs / 1000;
 
     const sinkDurMs = 900;
@@ -837,13 +944,20 @@ class Tomahawk {
       const ts = Math.max(0.6, this.travelTargetSec || 3);
       const horizNominal = Math.max(
         220,
-        Math.min(540, ((w * 2.55) / ts) * (this.speedVar ?? 1))
+        Math.min(
+          540,
+          ((w * 2.55) / ts) * (this.speedVar ?? 1) * (this.tierVelocityMul ?? 1)
+        )
       );
-      const horiz = horizNominal * emdrPendulumSpeedMul(this.x, w) * vBreath;
+      const dEm = Math.hypot(this.x - cx, this.y - cy);
+      const easeEm = cedarSnagApproachEaseMultiplier(dEm);
+      const horiz =
+        horizNominal * emdrPendulumSpeedMul(this.x, w) * vBreath * easeEm;
 
       this.x += this.emdrDir * horiz * dtSec;
 
-      const horizOut = horizNominal * emdrPendulumSpeedMul(this.x, w) * vBreath;
+      const horizOut =
+        horizNominal * emdrPendulumSpeedMul(this.x, w) * vBreath * easeEm;
 
       const xNorm = this.x / Math.max(1, w);
       this.emdrPathPhase = (this.emdrPathPhase ?? this.seed * 0.4) + dtSec * 1.65;
@@ -885,19 +999,68 @@ class Tomahawk {
       return;
     }
 
+    // —— KW’ÉTL’EN Orca tier: lateral swell along inbound bearing (S-curve toward the log)
+    if (this.mode === MODE_ORCA_WISDOM && this.orcaWaveMode) {
+      const vBreath =
+        typeof getVagusSnagVelocityMultiplier === "function" ? getVagusSnagVelocityMultiplier(nowMs) : 1;
+      const scx = cx;
+      const scy = cy;
+      const dx = scx - this.x;
+      const dy = scy - this.y;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const tx = dx / dist;
+      const ty = dy / dist;
+      const px = -ty;
+      const py = tx;
+      const ease = cedarSnagApproachEaseMultiplier(dist);
+      const baseSpeed =
+        (typeof this._travelTargetPxPerSec === "number" ? this._travelTargetPxPerSec : 300) *
+        vBreath *
+        ease *
+        (this.speedVar ?? 1);
+      this.wavePhaseAccum = (this.wavePhaseAccum ?? 0) + dtSec * (2.05 + (this.waveFreq ?? 2.4) * 0.12);
+      const lateral = (this.waveAmp ?? 48) * Math.sin(this.wavePhaseAccum * (this.waveFreq ?? 2.4) + this.seed);
+      const adv = baseSpeed * dtSec;
+      this.x += tx * adv + px * lateral * dtSec * 2.35;
+      this.y += ty * adv + py * lateral * dtSec * 2.35;
+      this.vx = tx * baseSpeed + px * lateral * 1.12;
+      this.vy = ty * baseSpeed + py * lateral * 1.12;
+
+      if (Math.random() < 0.22) {
+        fragments.push(
+          new Fragment({
+            x: this.x,
+            y: this.y,
+            vx: this.vx * 0.1 + (Math.random() - 0.5) * 80,
+            vy: this.vy * 0.1 + (Math.random() - 0.5) * 80,
+            hue: this.hue,
+            snagTotemLevel: this.snagTotemLevel,
+          })
+        );
+      }
+
+      if (dist < 52) {
+        this.snagSink = { startMs: nowMs, ox: this.x, oy: this.y };
+      }
+      return;
+    }
+
     // —— KW’ÉTL’EN (mode 3): slow spiral in → multiple inner orbits (smooth pursuit) → sink into totem
     if (this.mode === MODE_ORCA_WISDOM) {
       const vFlow =
         (typeof getVagusSnagVelocityMultiplier === "function" ? getVagusSnagVelocityMultiplier(nowMs) : 1) *
-        (this.speedVar ?? 1);
+        (this.speedVar ?? 1) *
+        (this.tierVelocityMul ?? 1);
       const scx = this.spiralCx ?? cx;
       const scy = this.spiralCy ?? cy;
       const ox = this.x;
       const oy = this.y;
       const frame60 = (dtMs * 60) / 1000;
-      const omega = 0.015 * frame60 * vFlow;
+      const dPin = Math.hypot(ox - scx, oy - scy);
+      const easeSpiral = cedarSnagApproachEaseMultiplier(dPin);
+      const omega = 0.015 * frame60 * vFlow * easeSpiral;
       const rMin = 30;
-      const radialDecay = 0.38 * frame60 * vFlow;
+      const radialDecay = 0.38 * frame60 * vFlow * easeSpiral;
       const innerOrbitsBeforeSink = 3;
 
       if (this.orcaSpiralStage === "IN") {
@@ -954,7 +1117,10 @@ class Tomahawk {
       typeof this._travelTargetPxPerSec === "number"
         ? this._travelTargetPxPerSec
         : Math.max(240, Math.min(w, h) * 0.42);
-    const targetSpeed = targetBase * vBreath;
+    const dApproach = Math.hypot(this.x - cx, this.y - cy);
+    const approachMul = cedarSnagApproachEaseMultiplier(dApproach);
+    const targetSpeed =
+      targetBase * vBreath * approachMul * (this.tierVelocityMul ?? 1);
     const accel = (targetSpeed - speed) * 0.00045;
 
     if (this.mode === MODE_SALMON_RUN && this.verticalVent) {
@@ -987,16 +1153,25 @@ class Tomahawk {
       this.vy += dy * inv * accel * 0.55 * dtMs;
     }
 
-    // Level 2 Orca rhythm: orbit slightly before settling inward.
-    if (typeof totemLevel === "number" && totemLevel === 2) {
+    // Level 2 (Orca carve): sinusoidal lateral weave toward the log (other modes).
+    if (
+      typeof totemLevel === "number" &&
+      totemLevel === 2 &&
+      !this.verticalVent &&
+      !this.orcaWaveMode
+    ) {
       const dx = cx - this.x;
       const dy = cy - this.y;
       const d = Math.max(1, Math.hypot(dx, dy));
-      const tx = -dy / d; // perpendicular (tangential)
-      const ty = dx / d;
-      const orbit = 0.00022 * dtMs * Math.max(220, speed);
-      this.vx += tx * orbit * 220;
-      this.vy += ty * orbit * 220;
+      const tx = dx / d;
+      const ty = dy / d;
+      const px = -ty;
+      const py = tx;
+      const wavePhase = nowMs * 0.0033 + this.seed + this.x * 0.007;
+      const waveAmp = Math.min(48, w * 0.034);
+      const lateral = waveAmp * Math.sin(wavePhase);
+      this.vx += px * lateral * dtSec * 2.05;
+      this.vy += py * lateral * dtSec * 2.05;
     }
 
     this.x += this.vx * dtSec;
@@ -1503,15 +1678,15 @@ class Fragment {
           if (dest) dest.active = true;
           if (typeof setTotemLandingBlend === "function") setTotemLandingBlend(lv, this.destIndex, null);
           if (typeof hapticFragmentLand === "function") hapticFragmentLand(nowMs);
-          else if (navigator.vibrate) {
-            try {
-              navigator.vibrate(5);
-            } catch (_) {}
-          }
+          else if (typeof totemVibrate === "function") totemVibrate(5);
           this.harvestSticking = false;
           this.harvestPainted = true;
           if (typeof maybeSalmonPaintCompletionAfterHarvestLand === "function")
             maybeSalmonPaintCompletionAfterHarvestLand(nowMs, lv);
+          if (typeof maybeOrcaPaintCompletionAfterHarvestLand === "function")
+            maybeOrcaPaintCompletionAfterHarvestLand(nowMs, lv);
+          if (typeof maybeOspreyPaintCompletionAfterHarvestLand === "function")
+            maybeOspreyPaintCompletionAfterHarvestLand(nowMs, lv);
         }
         return;
       }
@@ -1625,11 +1800,7 @@ class Fragment {
             this.lockedAtMs = nowMs;
             this.lockAngle = Math.atan2(this.vy, this.vx);
             if (typeof hapticFragmentLand === "function") hapticFragmentLand(nowMs);
-            else if (navigator.vibrate) {
-              try {
-                navigator.vibrate(5);
-              } catch (_) {}
-            }
+            else if (typeof totemVibrate === "function") totemVibrate(5);
             if (lvl === 1 && Array.isArray(totemLockCounts) && idx >= 0 && idx < totemLockCounts.length) {
               totemLockCounts[idx]++;
               activateTotemPoint(lvl, idx);

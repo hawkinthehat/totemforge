@@ -8,6 +8,135 @@ let _levelCooldown = 0;
 /** EMDR grid sequencing lives in physics.js (cedarConsumeEmrdGridCell). */
 let lastZone = -1;
 
+/** Salish-centered onboarding: snag-sequence tips + ST’ÉXEM reveal (localStorage). */
+const SALISH_ONBOARDING_LS_KEY = "totemforge_salish_onboarding_complete";
+const LEGACY_ONBOARDING_LS_KEY = "totemforge_onboarding_instructions_done";
+const STEXEM_REVEAL_LS_KEY = "totemforge_stexem_reveal_shown";
+
+let _salishSnagTipCount = 0;
+let _stexemRevealGateDone = false;
+
+function isSalishOnboardingComplete() {
+  try {
+    if (localStorage.getItem(SALISH_ONBOARDING_LS_KEY) === "1") return true;
+    if (localStorage.getItem(LEGACY_ONBOARDING_LS_KEY) === "1") return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
+function persistSalishOnboardingComplete() {
+  try {
+    localStorage.setItem(SALISH_ONBOARDING_LS_KEY, "1");
+    localStorage.setItem(LEGACY_ONBOARDING_LS_KEY, "1");
+  } catch (_) {}
+}
+
+const SALISH_HTML_TIP_1 = `<p class="salish-tip-plain">Match your spirit to the Master Log. INHALE as it grows, EXHALE as it settles.</p>`;
+
+const SALISH_HTML_TIP_2 = `<p class="salish-tip-plain">Shatter the Cedar Snags. Each strike shapes the ST’ÉXEM (Salmon).</p>`;
+
+const SALISH_HTML_TIP_3 = `<p class="salish-tip-plain">In Contralateral mode, use the hand that matches the side of the snag. This aligns the mind.</p>`;
+
+function clearSalishTooltipRoot() {
+  const root = document.getElementById("salish-tooltip-root");
+  if (!root) return;
+  root.classList.remove("salish-tip-visible");
+  root.setAttribute("hidden", "");
+  root.setAttribute("aria-hidden", "true");
+  const inner = root.querySelector(".salish-tooltip-inner");
+  if (inner) inner.innerHTML = "";
+}
+
+function showSalishTooltipStep(step) {
+  const root = document.getElementById("salish-tooltip-root");
+  if (!root) return;
+  const inner = root.querySelector(".salish-tooltip-inner");
+  if (!inner) return;
+  const html = step === 1 ? SALISH_HTML_TIP_1 : step === 2 ? SALISH_HTML_TIP_2 : step === 3 ? SALISH_HTML_TIP_3 : "";
+  root.classList.remove("salish-tip-visible");
+  inner.innerHTML = html;
+  root.removeAttribute("hidden");
+  root.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => root.classList.add("salish-tip-visible"));
+  });
+}
+
+function showStexemRevealToast() {
+  const el = document.getElementById("salish-reveal-toast");
+  if (!el) return;
+  el.textContent = "The ST’ÉXEM is emerging from the wood.";
+  el.removeAttribute("hidden");
+  el.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => el.classList.add("salish-toast-visible"));
+  window.setTimeout(() => {
+    el.classList.remove("salish-toast-visible");
+    window.setTimeout(() => {
+      el.setAttribute("hidden", "");
+      el.setAttribute("aria-hidden", "true");
+    }, 450);
+  }, 3800);
+}
+
+function tickSalishStexemReveal() {
+  if (_stexemRevealGateDone) return;
+  try {
+    if (localStorage.getItem(STEXEM_REVEAL_LS_KEY) === "1") {
+      _stexemRevealGateDone = true;
+      return;
+    }
+  } catch (_) {
+    _stexemRevealGateDone = true;
+    return;
+  }
+  if (typeof totemLevel !== "number" || totemLevel !== 1) return;
+  if (typeof totemTierFillRatio !== "function") return;
+  if (totemTierFillRatio(1) < 0.5) return;
+  _stexemRevealGateDone = true;
+  try {
+    localStorage.setItem(STEXEM_REVEAL_LS_KEY, "1");
+  } catch (_) {}
+  showStexemRevealToast();
+}
+
+function noteSalishOnboardingShatter() {
+  if (isSalishOnboardingComplete()) return;
+  /** v1.0: Salish tips only during Salmon (level 1) carve. */
+  if (typeof totemLevel !== "number" || totemLevel !== 1) return;
+  _salishSnagTipCount++;
+  if (_salishSnagTipCount <= 3) showSalishTooltipStep(_salishSnagTipCount);
+  if (_salishSnagTipCount >= 3) {
+    persistSalishOnboardingComplete();
+    const root = document.getElementById("salish-tooltip-root");
+    if (root) {
+      root.classList.remove("salish-tip-visible");
+      window.setTimeout(() => clearSalishTooltipRoot(), 620);
+    }
+  }
+}
+
+function applySuiteStartPresentation() {
+  const minimal = isSalishOnboardingComplete();
+  const card = document.querySelector(".suite-start-card");
+  const sub = document.querySelector(".suite-start-sub");
+  const tag = document.querySelector(".suite-start-tagline");
+  const btn = document.getElementById("suite-start-btn");
+  if (minimal) {
+    card?.classList.add("suite-start-card--minimal");
+    if (sub) sub.hidden = true;
+    if (tag) tag.hidden = true;
+    if (btn) btn.textContent = "Begin";
+    clearSalishTooltipRoot();
+  } else {
+    card?.classList.remove("suite-start-card--minimal");
+    if (sub) sub.hidden = false;
+    if (tag) tag.hidden = false;
+    if (btn) btn.textContent = "Begin the Forge";
+  }
+}
+
 /** Impact ripples (logical canvas coords) */
 let _ripples = [];
 
@@ -30,6 +159,30 @@ function screenShakeOffset(nowMs) {
     x: Math.sin(nowMs * 0.095) * mag,
     y: Math.cos(nowMs * 0.108) * mag * 0.82,
   };
+}
+
+/** Wrong-side click in contralateral modes — soft red veil (no shatter). */
+let _contralateralWrongPulseUntilMs = 0;
+
+function bumpContralateralWrongPulse(nowMs = performance.now()) {
+  _contralateralWrongPulseUntilMs = nowMs + 380;
+}
+
+function drawContralateralWrongPulse(nowMs) {
+  if (!_contralateralWrongPulseUntilMs || nowMs >= _contralateralWrongPulseUntilMs || !ctx) return;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const dur = 380;
+  const u = Math.max(0, (_contralateralWrongPulseUntilMs - nowMs) / dur);
+  const fade = u * u;
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  const g = ctx.createRadialGradient(w * 0.5, h * 0.48, 0, w * 0.5, h * 0.52, Math.max(w, h) * 0.72);
+  g.addColorStop(0, `rgba(185, 28, 28, ${0.22 * fade})`);
+  g.addColorStop(1, `rgba(127, 29, 29, ${0.07 * fade})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
 }
 
 function addImpactRipple(x, y, nowMs) {
@@ -106,6 +259,16 @@ function updatePacerLabel(nowMs = performance.now()) {
   const label = document.getElementById("pacer-label");
   if (!label) return;
 
+  if (typeof _pacerStabilizedTextUntilMs === "number" && nowMs < _pacerStabilizedTextUntilMs && totemRunComplete) {
+    label.textContent = "STABILIZED";
+    label.dataset.mode = currentMode;
+    const s = _lastBreath.scaleMultiplier ?? 1;
+    const pulse = 0.92 + (s - 0.88) * 1.35;
+    label.style.transform = `translate(-50%, -50%) scale(${pulse.toFixed(3)})`;
+    label.style.opacity = `${Math.min(0.98, 0.68 + (_lastBreath.breath01 ?? 0) * 0.32)}`;
+    return;
+  }
+
   if (typeof _pacerGroundedTextUntilMs === "number" && nowMs < _pacerGroundedTextUntilMs) {
     label.textContent = "GROUNDED";
     label.dataset.mode = currentMode;
@@ -119,29 +282,42 @@ function updatePacerLabel(nowMs = performance.now()) {
   if (currentMode === MODE_SALMON_RUN) {
     label.textContent = "↑ Left · Right ↓";
   } else {
-    label.textContent = _lastBreath.phase === "INHALE" ? "Inhale" : "Exhale";
+    label.textContent = _lastBreath.phase === "INHALE" ? "INHALE" : "EXHALE";
   }
 
   label.dataset.mode = currentMode;
 
-  // Match pacer clarity to breathing expansion
+  // Match pacer clarity to log / breath expansion (same envelope as generateTotem scaleMultiplierLive)
   const s = _lastBreath.scaleMultiplier ?? 1;
   const pulse = 0.92 + (s - 0.88) * 1.35;
   label.style.transform = `translate(-50%, -50%) scale(${pulse.toFixed(3)})`;
   label.style.opacity = `${Math.min(0.96, 0.55 + (_lastBreath.breath01 ?? 0) * 0.45)}`;
 }
 
-function playWoodSnapForMode(clientX, snagOrVent) {
-  if (typeof playWoodSnap !== "function") return;
+function playWoodSnapForMode(clientX, snag) {
+  const tap =
+    typeof playWoodTapStereo === "function"
+      ? playWoodTapStereo
+      : typeof playWoodSnap === "function"
+        ? playWoodSnap
+        : null;
+  if (!tap) return;
+
   const w = window.innerWidth || 1;
-  if (currentMode === MODE_NEURAL_WEAVER || currentMode === MODE_OSPREY_SCOUT || currentMode === MODE_ORCA_WISDOM) {
-    playWoodSnap(clientX, clientX < w * 0.5 ? 0 : 2);
-  } else if (currentMode === MODE_SALMON_RUN) {
-    let vent = snagOrVent?.verticalVent;
-    if (!vent && typeof snagOrVent === "string") vent = snagOrVent;
-    if (vent === "TOP" || vent === "BOTTOM") playWoodSnap(clientX, undefined, { verticalVent: vent });
-    else playWoodSnap(clientX);
-  } else playWoodSnap(clientX);
+
+  if (currentMode === MODE_SALMON_RUN) {
+    let vent = snag?.verticalVent;
+    if (vent === "TOP" || vent === "BOTTOM") {
+      const pan = vent === "TOP" ? -1 : 1;
+      tap(pan, { verticalVent: vent });
+      return;
+    }
+  }
+
+  const sx = typeof snag?.x === "number" ? snag.x : clientX;
+  const pan = sx < w * 0.5 ? -1 : 1;
+  if (tap === playWoodTapStereo) tap(pan, {});
+  else playWoodSnap(undefined, sx < w * 0.5 ? 0 : 2, {});
 }
 
 /**
@@ -182,16 +358,30 @@ function burstFragmentsFromSnag(worldX, worldY, hue, snagTotemLevel) {
 }
 
 function tryShatterSnag(canvasX, canvasY) {
-  const idx =
-    typeof findTomahawkSnagHitIndex === "function" ? findTomahawkSnagHitIndex(canvasX, canvasY) : -1;
-  if (idx < 0) return false;
+  const rawIdx =
+    typeof findTomahawkSnagHitIndexUnfiltered === "function"
+      ? findTomahawkSnagHitIndexUnfiltered(canvasX, canvasY)
+      : typeof findTomahawkSnagHitIndex === "function"
+        ? findTomahawkSnagHitIndex(canvasX, canvasY)
+        : -1;
+  if (rawIdx < 0) return false;
 
-  const snag = tomahawks[idx];
+  const snag = tomahawks[rawIdx];
+  if (
+    typeof snagContralateralAllowsShatter === "function" &&
+    !snagContralateralAllowsShatter(snag, canvasX, canvasY)
+  ) {
+    bumpContralateralWrongPulse(performance.now());
+    return true;
+  }
+
+  const idx = rawIdx;
   const hue = snag.hue ?? modeHue(currentMode);
   const sx = snag.x;
   const sy = snag.y;
   tomahawks.splice(idx, 1);
   playWoodSnapForMode(canvasX, snag);
+  if (typeof cedarSnapShatterHaptic === "function") cedarSnapShatterHaptic();
   addImpactRipple(sx, sy, performance.now());
   if (typeof spawnLogChips === "function") spawnLogChips(sx, sy, performance.now());
   if (typeof spawnHarvestFragments === "function")
@@ -200,6 +390,7 @@ function tryShatterSnag(canvasX, canvasY) {
   if (typeof recordCedarFlowSuccessfulShatter === "function") recordCedarFlowSuccessfulShatter();
   if (typeof bumpTotemLogOutlineFlash === "function") bumpTotemLogOutlineFlash(performance.now(), modeColor(currentMode));
   bumpScreenShake(performance.now());
+  noteSalishOnboardingShatter();
   return true;
 }
 
@@ -263,11 +454,13 @@ function spawnAutoSnag(nowMs) {
   if (currentMode === MODE_ORCA_WISDOM) {
     const hint =
       typeof cedarNextSpiralAngleHint === "function" ? cedarNextSpiralAngleHint() : 0;
+    const ty =
+      typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number" ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC : 0.6;
     tomahawks.push(
       new Tomahawk({
         spiralAngleHint: hint,
         x: w * 0.5,
-        y: h * 0.52,
+        y: h * ty,
         hue: modeHue(currentMode),
         mode: MODE_ORCA_WISDOM,
         maxLife: 3800,
@@ -337,22 +530,22 @@ function animate(nowMs) {
 
   // Totem mesh + Master Log (geometry.js): Log is a single scaled fillRect + ~6 grain lines (fast path).
   _lastBreath = generateTotem(nowMs) ?? _lastBreath;
-  if (_breathHapticPrimed) {
-    if (_lastBreath.phase === "INHALE" && _prevBreathPhase === "EXHALE") {
-      if (typeof hapticBreathPacerInhale === "function") hapticBreathPacerInhale();
-    } else if (_lastBreath.phase === "EXHALE" && _prevBreathPhase === "INHALE") {
-      if (typeof hapticBreathPacerExhale === "function") hapticBreathPacerExhale();
+  if (typeof window !== "undefined" && window.totemSuiteInteractive && _breathHapticPrimed) {
+    if (_lastBreath.phase === "EXHALE" && _prevBreathPhase === "INHALE") {
+      if (typeof hapticBreathInhalePeak === "function") hapticBreathInhalePeak();
     }
-  } else {
+  } else if (!_breathHapticPrimed) {
     _breathHapticPrimed = true;
   }
   _prevBreathPhase = _lastBreath.phase;
   updatePacerLabel(nowMs);
 
-  // Cedar Snag auto-spawn: ~900ms timer (scales +5% / 10 streak), max 2 living, spiral gate (physics.js).
+  // Cedar Snag auto-spawn: 1500ms baseline gap (+5% speed per 10 streak when scaling enabled), max 2 living, spiral gate (physics.js).
   const snagAscensionBlocked =
     typeof totemSnagSpawnSuppressedUntilMs === "number" && nowMs < totemSnagSpawnSuppressedUntilMs;
   if (
+    typeof window !== "undefined" &&
+    window.totemSuiteInteractive &&
     !snagAscensionBlocked &&
     typeof shouldAttemptCedarSnagSpawn === "function" &&
     shouldAttemptCedarSnagSpawn(nowMs)
@@ -373,7 +566,9 @@ function animate(nowMs) {
     updateTotemSoundscape(nowMs, _lastBreath, tomahawks, currentMode);
   }
 
-  if (typeof totemMidlineGlow === "number") totemMidlineGlow *= 0.905;
+  if (typeof totemRunComplete !== "undefined" && totemRunComplete) {
+    totemMidlineGlow = Math.max(typeof totemMidlineGlow === "number" ? totemMidlineGlow : 0, 3.5);
+  } else if (typeof totemMidlineGlow === "number") totemMidlineGlow *= 0.905;
 
   trimFragmentsToMaxCap();
 
@@ -432,14 +627,15 @@ function animate(nowMs) {
 
   ctx.restore();
 
-  // Ascension / tier-up: Salmon→Orca at 95%; Orca→Osprey at configured fill; camera + haptics on later tiers.
+  drawContralateralWrongPulse(nowMs);
+
+  tickSalishStexemReveal();
+
+  // Ascension / tier-up: Salmon→Orca at 95% carve (Orca→Osprey uses 400 harvest lands on tier 2 in config.js).
   _levelCooldown -= dtMs;
-  if (_levelCooldown <= 0) {
-    const maxTotem = (typeof TOTEM_LEVELS !== "undefined" ? TOTEM_LEVELS.length : 4) - 1;
+  if (_levelCooldown <= 0 && !(typeof totemRunComplete !== "undefined" && totemRunComplete)) {
     const ascFill =
       typeof TOTEM_ASCENSION_SALMON_FILL_RATIO === "number" ? TOTEM_ASCENSION_SALMON_FILL_RATIO : 0.95;
-    const tierUpFill =
-      typeof TOTEM_LEVEL_UP_FILL_RATIO === "number" ? TOTEM_LEVEL_UP_FILL_RATIO : 0.985;
 
     if (
       totemLevel === 1 &&
@@ -449,25 +645,45 @@ function animate(nowMs) {
     ) {
       beginTotemSalmonAscension(nowMs);
       _levelCooldown = 1400;
-    } else if (
-      totemLevel < maxTotem &&
-      totemLevel >= 2 &&
-      typeof totemTierFillRatio === "function" &&
-      totemTierFillRatio(totemLevel) >= tierUpFill
-    ) {
-      if (levelUp(nowMs)) {
-        _levelCooldown = 1400;
-        startTotemLevelIntroPan(nowMs, totemLevel);
-        if (navigator.vibrate) {
-          try {
-            navigator.vibrate([100, 50, 100]);
-          } catch (_) {}
-        }
-      }
     }
+    // Orca → Osprey ascension is driven by 400 harvest paint lands on tier 2 (`maybeOrcaPaintCompletionAfterHarvestLand` in config.js), not fill ratio.
   }
 
   requestAnimationFrame(animate);
+}
+
+function wireSuiteStartOverlay() {
+  const ov = document.getElementById("suite-start-overlay");
+  const btn = document.getElementById("suite-start-btn");
+  if (!ov || !btn) return;
+  applySuiteStartPresentation();
+  const finalizeClose = () => {
+    ov.setAttribute("hidden", "");
+    ov.setAttribute("aria-hidden", "true");
+    ov.classList.remove("suite-start-overlay--exiting");
+  };
+  const dismiss = (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    if (e?.stopPropagation) e.stopPropagation();
+    if (typeof window !== "undefined") window.totemSuiteInteractive = true;
+    if (typeof unlockTotemAudio === "function") unlockTotemAudio();
+    if (typeof totemVibrate === "function") totemVibrate([30, 50, 30]);
+    ov.classList.add("suite-start-overlay--exiting");
+    const safety = window.setTimeout(finalizeClose, 520);
+    ov.addEventListener(
+      "transitionend",
+      (ev) => {
+        if (ev.target !== ov || ev.propertyName !== "opacity") return;
+        window.clearTimeout(safety);
+        finalizeClose();
+      },
+      { once: true }
+    );
+  };
+  btn.addEventListener("click", dismiss);
+  btn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") dismiss(e);
+  });
 }
 
 function init() {
@@ -476,21 +692,19 @@ function init() {
   ctx = canvas.getContext("2d", { alpha: true, desynchronized: true });
   if (!ctx) throw new Error("Unable to create 2D canvas context");
 
+  wireSuiteStartOverlay();
+
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
   canvas.addEventListener("pointerdown", (e) => {
-    if (typeof unlockTotemAudio === "function") unlockTotemAudio();
+    if (typeof window !== "undefined" && !window.totemSuiteInteractive) return;
     const { x: cx, y: cy } = canvasPointFromEvent(e);
     if (typeof setTotemClickPan === "function") setTotemClickPan(cx, performance.now());
     // Neural Suite: ripples / harvest only when a Cedar Snag is hit within pointer radius + contralateral rules (physics.js).
     if (tryShatterSnag(cx, cy)) return;
     if (typeof resetCedarFlowAfterMiss === "function") resetCedarFlowAfterMiss(performance.now());
-    if (navigator.vibrate) {
-      try {
-        navigator.vibrate(10);
-      } catch (_) {}
-    }
+    if (typeof totemVibrate === "function") totemVibrate(10);
   });
 
   // Useful reset shortcut
@@ -510,6 +724,8 @@ function init() {
       else if (typeof resetTotemCameraAll === "function") resetTotemCameraAll();
       if (typeof totemMidlineGlow === "number") totemMidlineGlow = 0;
       _screenShakeUntilMs = 0;
+      _contralateralWrongPulseUntilMs = 0;
+      if (typeof resetTotemRunCompletionState === "function") resetTotemRunCompletionState();
       totemLevel = 1;
       levelTransition = { active: false, startMs: 0, durationMs: 900, fromLevel: 0, toLevel: 0 };
       lastZone = -1;

@@ -132,6 +132,19 @@ function drawMasterTotemLog(ctx2, w, h, breath01, nowMs = performance.now()) {
     ctx2.restore();
   }
 
+  /** Total stabilization finale: log rim breathes with the 4s/8s cycle (synced to totem mesh glow). */
+  if (typeof totemRunComplete === "boolean" && totemRunComplete) {
+    const pulse = 0.38 + 0.62 * amp;
+    ctx2.save();
+    ctx2.strokeStyle = `rgba(45, 212, 191, ${0.34 * pulse})`;
+    ctx2.lineWidth = 3.1;
+    ctx2.strokeRect(cx - logW * 0.5, cy - logH * 0.5, logW, logH);
+    ctx2.strokeStyle = `rgba(248, 250, 252, ${0.2 * pulse})`;
+    ctx2.lineWidth = 1.45;
+    ctx2.strokeRect(cx - logW * 0.5 + 2, cy - logH * 0.5 + 2, logW - 4, logH - 4);
+    ctx2.restore();
+  }
+
   ctx2.restore();
 }
 
@@ -262,6 +275,7 @@ function paintTotemDotToCache(
     marking === "tail" ||
     marking === "talon" ||
     marking === "wing" ||
+    marking === "beak" ||
     marking === "blowhole";
 
   const ghostRgb = "170, 182, 195";
@@ -317,10 +331,18 @@ function redrawTotemCache(L, nowMs = performance.now()) {
   c.globalCompositeOperation = "source-over";
 
   const amp = L.amp;
-  const glow = 0.11 + 0.12 * amp;
+  const cycleMs = 12000;
+  const inhaleMs = 4000;
+  const ti = ((nowMs % cycleMs) + cycleMs) % cycleMs;
+  const breath01Stab = ti < inhaleMs ? ti / inhaleMs : 1 - (ti - inhaleMs) / (cycleMs - inhaleMs);
+  const stabEase = 0.5 - 0.5 * Math.cos(Math.PI * breath01Stab);
+  const totemRunDone = typeof totemRunComplete === "boolean" && totemRunComplete;
+  const stabPulse = totemRunDone ? 0.42 + 0.58 * stabEase : 0;
+  const glow = (0.11 + 0.12 * amp) * (1 + stabPulse * 2.25);
   const dot = Math.max(1.2, L.S * 0.0065);
   const mg = typeof totemMidlineGlow === "number" ? totemMidlineGlow : 0;
-  const eyeGlowMul = 1 + mg * 0.72;
+  const stabilizedBoost = totemRunDone ? 2.6 + stabPulse * 1.45 : 0;
+  const eyeGlowMul = 1 + (mg + stabilizedBoost) * 0.72;
   const salmonCompletionGlow =
     typeof totemSalmonCompletionGlowUntilMs === "number" &&
     nowMs < totemSalmonCompletionGlowUntilMs;
@@ -329,15 +351,34 @@ function redrawTotemCache(L, nowMs = performance.now()) {
 
   const salmonReveal = totemTierReveal(1);
   const ghostRamp =
-    typeof totemOrcaAscensionGhostRamp === "function" ? totemOrcaAscensionGhostRamp(performance.now()) : 1;
-  const orcaReveal = totemTierReveal(2) * ghostRamp;
-  const ospreyReveal = totemTierReveal(3);
+    typeof totemOrcaAscensionGhostRamp === "function" ? totemOrcaAscensionGhostRamp(nowMs) : 1;
+  let orcaReveal = totemTierReveal(2) * ghostRamp;
+  let ospreyReveal = totemTierReveal(3);
+  const transFin = levelTransition?.active ? levelTransition : null;
+  if (transFin?.active && transFin.fromLevel === 1 && transFin.toLevel === 2) {
+    const pf = Math.min(1, Math.max(0, (nowMs - transFin.startMs) / Math.max(1, transFin.durationMs)));
+    const easeGhost = 0.5 - 0.5 * Math.cos(Math.PI * pf);
+    orcaReveal *= 0.35 + 0.65 * easeGhost;
+  }
+  if (transFin?.active && transFin.fromLevel === 2 && transFin.toLevel === 3) {
+    const pf = Math.min(1, Math.max(0, (nowMs - transFin.startMs) / Math.max(1, transFin.durationMs)));
+    const easeGhost = 0.5 - 0.5 * Math.cos(Math.PI * pf);
+    ospreyReveal *= 0.35 + 0.65 * easeGhost;
+  }
 
   const salmonPts = totemPointsByLevel[1] ?? [];
   const orcaPts = totemPointsByLevel[2] ?? [];
   const ospreyPts = totemPointsByLevel[3] ?? [];
 
-  const yAtLayout = (p) => (p._y0 !== undefined ? p._y0 : p.y);
+  const bh = typeof L.blockH === "number" ? L.blockH : L.S * 2.32;
+  const slide1 =
+    typeof totemCompletedTierSlidePx === "function" ? totemCompletedTierSlidePx(1, bh, nowMs) : 0;
+  const slide2 =
+    typeof totemCompletedTierSlidePx === "function" ? totemCompletedTierSlidePx(2, bh, nowMs) : 0;
+  const slide3 =
+    typeof totemCompletedTierSlidePx === "function" ? totemCompletedTierSlidePx(3, bh, nowMs) : 0;
+
+  const yAtLayout = (p, tierSlide) => (p._y0 !== undefined ? p._y0 : p.y) + tierSlide;
 
   for (let i = 0; i < salmonPts.length; i++) {
     const p = salmonPts[i];
@@ -347,7 +388,21 @@ function redrawTotemCache(L, nowMs = performance.now()) {
       (p.marking === "eye" || p.marking === "joint" ? eyeGlowMul : 1) * salmonMarkingGlowBoost;
     const br =
       dot * (fo === 0 ? 1.08 : 0.98) * (p.marking === "eye" || p.marking === "joint" ? 1.08 : 1);
-    paintTotemDotToCache(c, 1, p.x, yAtLayout(p), br, on, salmonReveal, em, p, glow, eyeGlowMul, emdrSalmonGhost, i);
+    paintTotemDotToCache(
+      c,
+      1,
+      p.x,
+      yAtLayout(p, slide1),
+      br,
+      on,
+      salmonReveal,
+      em,
+      p,
+      glow,
+      eyeGlowMul,
+      emdrSalmonGhost,
+      i
+    );
   }
 
   for (let i = 0; i < orcaPts.length; i++) {
@@ -366,7 +421,7 @@ function redrawTotemCache(L, nowMs = performance.now()) {
       (fo === 0 ? 1.06 : 0.98) *
       (p.marking === "eye" ? 1.08 : 1) *
       silhouetteBoost;
-    paintTotemDotToCache(c, 2, p.x, yAtLayout(p), br, on, orcaReveal, em, p, glow, eyeGlowMul, emdrSalmonGhost, i);
+    paintTotemDotToCache(c, 2, p.x, yAtLayout(p, slide2), br, on, orcaReveal, em, p, glow, eyeGlowMul, emdrSalmonGhost, i);
   }
 
   for (let i = 0; i < ospreyPts.length; i++) {
@@ -375,7 +430,7 @@ function redrawTotemCache(L, nowMs = performance.now()) {
     const on = p.active === true;
     const em = p.marking === "eye" ? eyeGlowMul : 1;
     const br = dot * (fo === 0 ? 1.06 : 0.98) * (p.marking === "eye" ? 1.08 : 1);
-    paintTotemDotToCache(c, 3, p.x, yAtLayout(p), br, on, ospreyReveal, em, p, glow, eyeGlowMul, emdrSalmonGhost, i);
+    paintTotemDotToCache(c, 3, p.x, yAtLayout(p, slide3), br, on, ospreyReveal, em, p, glow, eyeGlowMul, emdrSalmonGhost, i);
   }
 }
 
@@ -406,8 +461,7 @@ function generateTotem(nowMs) {
     breath01 = 1 - (t - inhaleMs) / (cycleMs - inhaleMs);
   }
 
-  const pacer = document.getElementById("pacer-label");
-  if (pacer) pacer.textContent = phase === "INHALE" ? "Inhale" : "Exhale";
+  // Pacer copy + timing: engine.js updatePacerLabel() owns visible text (syncs with breath01 / scale).
 
   // Scale envelope (ease in/out for smooth vagal pacing)
   const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
@@ -624,11 +678,11 @@ function generateTotem(nowMs) {
     const pulseMul = 0.94 + ((scaleMultiplier - 0.88) / 0.22) * 0.1;
 
     const insideWing = (px, py, side) => {
-      const wx = birdCx + side * s * 0.42;
+      const wx = birdCx + side * s * 0.48;
       const wy = birdCy + s * 0.02;
-      const dx = (px - wx) / (s * 0.55);
-      const dy = (py - wy) / (s * 0.22);
-      return dx * dx + dy * dy <= 1.05;
+      const dx = (px - wx) / (s * 0.62);
+      const dy = (py - wy) / (s * 0.24);
+      return dx * dx + dy * dy <= 1.06;
     };
 
     const rhoO = Math.sqrt(5);
@@ -647,12 +701,12 @@ function generateTotem(nowMs) {
       }
     }
 
-    // Wing grids (left / right)
+    // Wing grids (left / right) — wide osprey wingspan
     for (const side of [-1, 1]) {
       const gw = s * 0.62;
-      const gh = s * 0.38;
-      let gx = birdCx + side * s * 0.12;
-      while ((side < 0 && gx > birdCx - s * 0.72) || (side > 0 && gx < birdCx + s * 0.72)) {
+      const gh = s * 0.4;
+      let gx = birdCx + side * s * 0.1;
+      while ((side < 0 && gx > birdCx - s * 0.84) || (side > 0 && gx < birdCx + s * 0.84)) {
         let gy = birdCy - gh * 0.45;
         while (gy < birdCy + gh * 0.48) {
           if (insideWing(gx, gy, side)) {
@@ -674,6 +728,31 @@ function generateTotem(nowMs) {
       const a0 = (ei / eyeSteps) * TWO_PI;
       for (let rr = 1.0; rr >= 0.58; rr -= 0.035) {
         pushSalmonPoint(a, eyeCx + Math.cos(a0) * erx * rr, eyeCy + Math.sin(a0) * ery * rr, 0, idxRef, "eye", birdCx, birdCy, pulseMul);
+      }
+    }
+
+    // Beak — narrow hooked profile (sharp silhouette forward of the eye)
+    const beakCx = birdCx + s * 0.32;
+    const beakCy = birdCy - s * 0.025;
+    const beakSteps = 72;
+    for (let bi = 0; bi < beakSteps; bi++) {
+      const u = bi / Math.max(1, beakSteps - 1);
+      const bx = beakCx + u * s * 0.24;
+      const by = beakCy + (u * u * 0.28 - 0.12) * s * 0.2;
+      for (let shell = 0; shell < 5; shell++) {
+        const off = (shell - 2) * 0.009 * s;
+        pushSalmonPoint(
+          a,
+          bx,
+          by + off,
+          shell < 2 ? 0 : 1,
+          idxRef,
+          "beak",
+          birdCx,
+          birdCy,
+          pulseMul,
+          1
+        );
       }
     }
 
@@ -781,8 +860,8 @@ function generateTotem(nowMs) {
       1.0, 0.99, 0.97, 0.95, 0.93, 0.9, 0.87, 0.84, 0.8, 0.76, 0.72, 0.68, 0.64, 0.59, 0.54, 0.49, 0.44,
     ];
     const dCx = ocCx - s * 0.02;
-    const dCy = ocCy - s * 0.42;
-    const dR = s * 0.72;
+    const dCy = ocCy - s * 0.48;
+    const dR = s * 0.78;
     const arcD = (n) => Math.max(28, Math.round(n * rhoOr));
     pushFormlineU(dCx, dCy, dR, Math.PI * 1.18, Math.PI * 0.62, arcD(150), dorsalRadials, "dorsal", (rr, fo) =>
       fo === 0 ? 1 : 2
@@ -799,7 +878,7 @@ function generateTotem(nowMs) {
     const tailRadials = [1.0, 0.97, 0.94, 0.9, 0.85, 0.8, 0.74, 0.68, 0.62, 0.55];
     const tCx = ocCx - s * 0.58;
     const tCy = ocCy + s * 0.06;
-    const tR = s * 0.5;
+    const tR = s * 0.55;
     pushFormlineU(tCx, tCy, tR, Math.PI * 0.22, Math.PI * 0.92, arcD(168), tailRadials, "tail", (rr, fo) =>
       fo === 0 ? 1 : 2
     );
@@ -946,6 +1025,10 @@ function generateTotem(nowMs) {
   if (dtGenMs < 1) totemCameraY = camTarget;
   else totemCameraY += (camTarget - totemCameraY) * camLerp;
 
+  if (trans?.active && prog >= 1) {
+    levelTransition.active = false;
+  }
+
   const viewCamY = totemCameraY + (typeof globalCameraY === "number" ? globalCameraY : 0);
 
   syncTotemPointActiveFlags();
@@ -954,6 +1037,8 @@ function generateTotem(nowMs) {
     const gr = totemOrcaAscensionGhostRamp(nowMs);
     if (typeof totemLevel === "number" && totemLevel >= 2 && gr < 0.998) totemCacheDirty = true;
   }
+
+  if (trans?.active && prog < 1) totemCacheDirty = true;
 
   if (totemCacheDirty) {
     ensureTotemOffscreen(w, h);
@@ -964,9 +1049,13 @@ function generateTotem(nowMs) {
   for (let lv = 1; lv <= 3; lv++) {
     const arr = totemPointsByLevel[lv];
     if (!arr) continue;
+    const slide =
+      typeof totemCompletedTierSlidePx === "function"
+        ? totemCompletedTierSlidePx(lv, blockH, nowMs)
+        : 0;
     for (let i = 0; i < arr.length; i++) {
       const p = arr[i];
-      if (p._y0 !== undefined) p.y = p._y0 + viewCamY;
+      if (p._y0 !== undefined) p.y = p._y0 + viewCamY + slide;
     }
   }
 
