@@ -1757,6 +1757,7 @@ function drawLonghouseGallery(ctx2, w, h, nowMs) {
     const nextTier =
       typeof totemFirstIncompleteTier === "function" ? totemFirstIncompleteTier() : 1;
     const isNext = !solid && !locked && nextTier === b.level;
+    const tierStarted = fr >= 0.008;
 
     ctx2.save();
     ctx2.beginPath();
@@ -1776,14 +1777,27 @@ function drawLonghouseGallery(ctx2, w, h, nowMs) {
       ctx2.shadowBlur = 22;
     } else if (locked) {
       const ug = ctx2.createLinearGradient(cx, b.top, cx, b.bottom);
-      ug.addColorStop(0, "#2d211c");
-      ug.addColorStop(0.5, "#4a372f");
-      ug.addColorStop(1, "#3b2b24");
+      ug.addColorStop(0, "#2a221c");
+      ug.addColorStop(0.48, "#4f4034");
+      ug.addColorStop(1, "#362b25");
       ctx2.fillStyle = ug;
-    } else if (isNext) {
-      ctx2.fillStyle = `rgba(40, 32, 28, ${0.55 + 0.08 * pulse})`;
+    } else if (!tierStarted) {
+      const ug = ctx2.createLinearGradient(cx - bwTop * 0.25, b.top, cx + bwBot * 0.35, b.bottom);
+      ug.addColorStop(0, "#9a8770");
+      ug.addColorStop(0.42, "#c9b89c");
+      ug.addColorStop(0.78, "#a69078");
+      ug.addColorStop(1, "#7d6b58");
+      ctx2.fillStyle = ug;
+      if (isNext) {
+        ctx2.shadowColor = "rgba(186, 230, 253, 0.32)";
+        ctx2.shadowBlur = 16 + 10 * pulse;
+      }
     } else {
-      ctx2.fillStyle = "rgba(35, 28, 24, 0.5)";
+      const ug = ctx2.createLinearGradient(cx, b.top, cx, b.bottom);
+      ug.addColorStop(0, "#6e5a4b");
+      ug.addColorStop(0.5, "#9d8269");
+      ug.addColorStop(1, "#554438");
+      ctx2.fillStyle = ug;
     }
 
     ctx2.fill();
@@ -1799,17 +1813,32 @@ function drawLonghouseGallery(ctx2, w, h, nowMs) {
         ctx2.lineTo(gx + 1, b.bottom - 6);
         ctx2.stroke();
       }
+    } else if (!solid && !tierStarted) {
+      drawLonghouseUncarvedCedarGrain(ctx2, cx, bwTop, bwBot, b.top, b.bottom, pulse);
+    } else if (!solid && tierStarted) {
+      drawLonghouseUncarvedCedarGrain(ctx2, cx, bwTop, bwBot, b.top, b.bottom, pulse * 0.55);
     }
 
-    if (isNext) {
+    if (isNext && !tierStarted) {
       ctx2.strokeStyle = "rgba(203, 213, 225, 0.28)";
       ctx2.lineWidth = 1.5;
       ctx2.stroke();
     }
 
-    if (isNext) {
-      const sGhost = Math.min(segH * 0.38, w * 0.13);
-      drawLonghouseTierGhostOutline(ctx2, b.level, cx, midY, sGhost);
+    let ghostS = 0;
+    let ghostLineA = 0.26;
+    if (solid) {
+      ghostS = Math.min(segH * 0.31, w * 0.108);
+      ghostLineA = 0.11;
+    } else if (!locked && tierStarted) {
+      ghostS = Math.min(segH * 0.36, w * 0.12);
+      ghostLineA = 0.29;
+    } else if (isNext && !tierStarted) {
+      ghostS = Math.min(segH * 0.38, w * 0.13);
+      ghostLineA = 0.26;
+    }
+    if (ghostS > 0) {
+      drawLonghouseTierGhostOutline(ctx2, b.level, cx, midY, ghostS, ghostLineA);
     }
 
     const P =
@@ -1837,8 +1866,16 @@ function drawLonghouseGallery(ctx2, w, h, nowMs) {
 
     if (!locked && !solid) {
       ctx2.font = "500 11px Inter, system-ui, sans-serif";
-      ctx2.fillStyle = isNext ? "rgba(186, 230, 253, 0.9)" : "rgba(148, 163, 184, 0.75)";
-      ctx2.fillText(isNext ? "Tap the ghost — enter the Forge" : "Await the elders", cx, midY + 28);
+      if (isNext) {
+        ctx2.fillStyle = "rgba(186, 230, 253, 0.9)";
+        ctx2.fillText("Tap the ghost — enter the Forge", cx, midY + 28);
+      } else if (tierStarted) {
+        ctx2.fillStyle = "rgba(148, 163, 184, 0.78)";
+        ctx2.fillText("Carving in progress — return to the Forge", cx, midY + 28);
+      } else {
+        ctx2.fillStyle = "rgba(148, 163, 184, 0.75)";
+        ctx2.fillText("Await the elders", cx, midY + 28);
+      }
     } else if (solid) {
       ctx2.font = "500 10px Inter, system-ui, sans-serif";
       ctx2.fillStyle = "rgba(204, 251, 241, 0.82)";
@@ -1885,6 +1922,14 @@ function drawLonghouseGallery(ctx2, w, h, nowMs) {
     ctx2.fillText("tap", px, py + 9);
     ctx2.restore();
   }
+
+  ctx2.save();
+  ctx2.textAlign = "center";
+  ctx2.textBaseline = "middle";
+  ctx2.font = "500 10px Inter, system-ui, sans-serif";
+  ctx2.fillStyle = "rgba(148, 163, 184, 0.34)";
+  ctx2.fillText("Private & Sovereign — nothing you carve here leaves your device", cx, h * 0.968);
+  ctx2.restore();
 }
 
 function drawTotemPotlatchCeremony(ctx2, w, h, nowMs) {
