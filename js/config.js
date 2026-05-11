@@ -35,8 +35,236 @@ let globalCameraY = 0;
 /** Highest animal tier that accepts harvest fragments (lags totemLevel until intro camera tween finishes). */
 let totemHarvestTierUnlocked = 1;
 
+/** Longhouse (gallery overview) → Forge (full-screen carve) → Potlatch (wrap ceremony). */
+const TOTEM_PHASE_GALLERY = "gallery";
+const TOTEM_PHASE_FORGE = "forge";
+const TOTEM_PHASE_POTLATCH = "potlatch";
+
+/** Gallery / Forge architecture (disables legacy auto ascension + 400-land tier jumps). */
+const TOTEM_LONGHOUSE_FORGE = true;
+
+let totemAppPhase = TOTEM_PHASE_GALLERY;
+/** Tier currently being carved in Forge (synced to `totemLevel` while forging). */
+let forgeTargetLevel = 1;
+
+/** `{ startMs, durationMs, tier, maxWaitMs }` during Potlatch; otherwise `null`. */
+let totemPotlatchCeremony = null;
+
+/** Forge entrance: brief zoom-in from Longhouse (ms since epoch). */
+let totemForgeEnterStartMs = 0;
+
+/** Practice Forge: no persistence, no Potlatch; motor rules from `practiceMotorSkillTier`. */
+let totemPracticeMode = false;
+/** 1 = Standard (Salmon vent), 2 = Bilateral Orca pairs, 3 = Contralateral red/teal — practice only. */
+let practiceMotorSkillTier = 1;
+/** Snapshot of pole progress when entering practice; restored on exit. */
+let _totemPracticeProgressBackup = null;
+
+/** Full carve state (JSON). */
+const TOTEM_PROGRESS_JSON_KEY = "totemforge_totem_progress_v1";
+/** Spec / quick read: first incomplete tier (1–3) or `4` when pole is complete. */
+const TOTEM_PROGRESS_LEVEL_KEY = "totem_progress";
+
+/** Parsed from disk until first geometry freeze applies it to `totemActivatedByLevel`. */
+let pendingTotemProgressJson = null;
+
+let _totemProgressSaveTimer = null;
+
 function getEffectiveHarvestLevel() {
+  if (typeof TOTEM_LONGHOUSE_FORGE !== "undefined" && TOTEM_LONGHOUSE_FORGE) {
+    if (totemAppPhase !== TOTEM_PHASE_FORGE) return 1;
+    if (typeof totemPracticeMode !== "undefined" && totemPracticeMode) {
+      const motor =
+        typeof practiceMotorSkillTier === "number" ? practiceMotorSkillTier | 0 : 1;
+      return Math.min(3, Math.max(1, motor));
+    }
+    const tl = typeof forgeTargetLevel === "number" ? forgeTargetLevel : totemLevel;
+    const cap =
+      typeof totemHarvestTierUnlocked === "number" ? totemHarvestTierUnlocked : 3;
+    return Math.min(Math.max(1, tl), cap);
+  }
   return Math.min(typeof totemLevel === "number" ? totemLevel : 1, totemHarvestTierUnlocked);
+}
+
+function totemGalleryTierIsLocked(level) {
+  if (level <= 1) return false;
+  return totemTierFillRatio(level - 1) < 0.996;
+}
+
+function totemGalleryTierCanEnterForge(level) {
+  if (typeof totemRunComplete !== "undefined" && totemRunComplete) return false;
+  if (level < 1 || level > 3) return false;
+  if (totemGalleryTierIsLocked(level)) return false;
+  if (typeof totemTierFillRatio === "function" && totemTierFillRatio(level) >= 0.995) return false;
+  return true;
+}
+
+function enterTotemForgeFromGallery(level, nowMs = performance.now()) {
+  if (!TOTEM_LONGHOUSE_FORGE) return;
+  if (totemAppPhase !== TOTEM_PHASE_GALLERY) return;
+  if (!totemGalleryTierCanEnterForge(level)) return;
+  totemPracticeMode = false;
+  _totemPracticeProgressBackup = null;
+  totemAppPhase = TOTEM_PHASE_FORGE;
+  forgeTargetLevel = level;
+  totemLevel = level;
+  totemHarvestTierUnlocked = level;
+  totemForgeEnterStartMs = nowMs;
+  globalCameraY = 0;
+  totemGlobalCameraTween = null;
+  totemSnagSpawnSuppressedUntilMs = 0;
+  levelTransition = { active: false, startMs: 0, durationMs: 900, fromLevel: 0, toLevel: 0 };
+  if (typeof setMode === "function") {
+    setMode(level <= 1 ? MODE_SALMON_RUN : MODE_ORCA_WISDOM);
+  }
+  if (typeof invalidateTotemGeometry === "function") invalidateTotemGeometry();
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+function snapshotTotemProgressForPracticeBackup() {
+  const clone = (lv) => (totemActivatedByLevel[lv] ? totemActivatedByLevel[lv].slice() : []);
+  return {
+    1: clone(1),
+    2: clone(2),
+    3: clone(3),
+    totemLevel: typeof totemLevel === "number" ? totemLevel : 1,
+    forgeTargetLevel: typeof forgeTargetLevel === "number" ? forgeTargetLevel : 1,
+    totemHarvestTierUnlocked:
+      typeof totemHarvestTierUnlocked === "number" ? totemHarvestTierUnlocked : 1,
+    totemRunComplete: !!totemRunComplete,
+  };
+}
+
+function restoreTotemProgressFromPracticeBackup() {
+  const b = _totemPracticeProgressBackup;
+  if (!b) return;
+  for (let lv = 1; lv <= 3; lv++) {
+    const src = b[lv];
+    const dst = totemActivatedByLevel[lv];
+    if (!src?.length || !dst?.length) continue;
+    const n = Math.min(src.length, dst.length);
+    for (let i = 0; i < n; i++) dst[i] = !!src[i];
+  }
+  totemLevel = b.totemLevel;
+  forgeTargetLevel = b.forgeTargetLevel;
+  totemHarvestTierUnlocked = b.totemHarvestTierUnlocked;
+  totemRunComplete = b.totemRunComplete;
+  _totemPracticeProgressBackup = null;
+  if (typeof syncTotemPointActiveFlags === "function") syncTotemPointActiveFlags();
+  if (typeof invalidateTotemGeometry === "function") invalidateTotemGeometry();
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+/**
+ * Practice sandbox: same Forge loop without saving or Potlatch. Motor skill tier is toggled manually.
+ */
+function enterTotemPracticeForgeFromGallery(nowMs = performance.now()) {
+  if (!TOTEM_LONGHOUSE_FORGE) return;
+  if (totemAppPhase !== TOTEM_PHASE_GALLERY) return;
+  if (typeof totemRunComplete !== "undefined" && totemRunComplete) return;
+  _totemPracticeProgressBackup = snapshotTotemProgressForPracticeBackup();
+  totemPracticeMode = true;
+  practiceMotorSkillTier = 1;
+  totemAppPhase = TOTEM_PHASE_FORGE;
+  forgeTargetLevel = 1;
+  totemLevel = 1;
+  totemHarvestTierUnlocked = 3;
+  totemForgeEnterStartMs = nowMs;
+  globalCameraY = 0;
+  totemGlobalCameraTween = null;
+  totemSnagSpawnSuppressedUntilMs = 0;
+  levelTransition = { active: false, startMs: 0, durationMs: 900, fromLevel: 0, toLevel: 0 };
+  if (typeof setMode === "function") setMode(MODE_SALMON_RUN);
+  if (typeof tomahawks !== "undefined" && Array.isArray(tomahawks)) tomahawks.length = 0;
+  if (typeof fragments !== "undefined" && Array.isArray(fragments)) fragments.length = 0;
+  if (typeof resetCedarSnagSpawnPlanningState === "function") resetCedarSnagSpawnPlanningState(nowMs);
+  if (typeof invalidateTotemGeometry === "function") invalidateTotemGeometry();
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+function exitTotemPracticeForgeToGallery() {
+  if (!totemPracticeMode) return;
+  totemPracticeMode = false;
+  practiceMotorSkillTier = 1;
+  restoreTotemProgressFromPracticeBackup();
+  totemAppPhase = TOTEM_PHASE_GALLERY;
+  totemForgeEnterStartMs = 0;
+  globalCameraY = 0;
+  totemSnagSpawnSuppressedUntilMs = 0;
+  if (typeof tomahawks !== "undefined" && Array.isArray(tomahawks)) tomahawks.length = 0;
+  if (typeof fragments !== "undefined" && Array.isArray(fragments)) fragments.length = 0;
+  if (typeof resetCedarSnagSpawnPlanningState === "function")
+    resetCedarSnagSpawnPlanningState(performance.now());
+  if (typeof clearForgeBilateralAwait === "function") clearForgeBilateralAwait();
+  if (typeof resetForgeMissStreak === "function") resetForgeMissStreak();
+}
+
+/** Clear in-memory carve for tier 1 (practice sandbox loop at 100%). */
+function resetTotemPracticeTierCarving() {
+  const act = totemActivatedByLevel[1];
+  if (act) for (let i = 0; i < act.length; i++) act[i] = false;
+  if (typeof totemLockCounts !== "undefined" && Array.isArray(totemLockCounts)) totemLockCounts.fill(0);
+  if (typeof clearHarvestDestReserved === "function") clearHarvestDestReserved();
+  if (typeof syncTotemPointActiveFlags === "function") syncTotemPointActiveFlags();
+  if (typeof invalidateTotemGeometry === "function") invalidateTotemGeometry();
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+function beginTotemPotlatchCeremony(nowMs, completedTier) {
+  totemAppPhase = TOTEM_PHASE_POTLATCH;
+  totemPotlatchCeremony = {
+    startMs: nowMs,
+    /** Minimum time for wrap visual; exit also waits on ceremony audio when present. */
+    durationMs: 4200,
+    maxWaitMs: 180000,
+    tier: completedTier,
+  };
+  totemSnagSpawnSuppressedUntilMs = Number.MAX_SAFE_INTEGER;
+  if (typeof tomahawks !== "undefined" && Array.isArray(tomahawks)) tomahawks.length = 0;
+  if (typeof suspendTotemSoundscapeForPotlatch === "function") suspendTotemSoundscapeForPotlatch();
+  if (typeof playTotemPotlatchCeremonyAudio === "function") playTotemPotlatchCeremonyAudio();
+  if (completedTier >= 3) {
+    if (typeof playTotemOspreyFinaleFluteCrescendo === "function") playTotemOspreyFinaleFluteCrescendo();
+    if (typeof totemVibrate === "function") totemVibrate([400, 100, 400], { force: true });
+  } else {
+    /** Drum-aligned Potlatch haptics: 100, pause 50, 100, pause 50, 200 (ms). */
+    if (typeof totemVibrate === "function") totemVibrate([100, 50, 100, 50, 200], { force: true });
+  }
+}
+
+function completeTotemPotlatchCeremony(nowMs = performance.now()) {
+  const tier = totemPotlatchCeremony?.tier ?? 1;
+  totemPotlatchCeremony = null;
+  totemAppPhase = TOTEM_PHASE_GALLERY;
+  totemForgeEnterStartMs = 0;
+  globalCameraY = 0;
+  totemSnagSpawnSuppressedUntilMs = 0;
+
+  const nextIncomplete =
+    typeof totemFirstIncompleteTier === "function" ? totemFirstIncompleteTier() : null;
+  totemHarvestTierUnlocked = Math.min(
+    3,
+    Math.max(typeof totemHarvestTierUnlocked === "number" ? totemHarvestTierUnlocked : 1, tier + 1)
+  );
+  forgeTargetLevel = nextIncomplete ?? 3;
+  totemLevel = forgeTargetLevel;
+
+  if (tier >= 3) {
+    totemRunComplete = true;
+    totemSnagSpawnSuppressedUntilMs = Number.MAX_SAFE_INTEGER;
+    totemMidlineGlow = Math.max(typeof totemMidlineGlow === "number" ? totemMidlineGlow : 0, 4.2);
+    _pacerStabilizedTextUntilMs = nowMs + 600000;
+  } else {
+    totemRunComplete = false;
+  }
+
+  if (typeof stopTotemPotlatchCeremonyAudio === "function") stopTotemPotlatchCeremonyAudio();
+  if (typeof resumeTotemSoundscapeAfterPotlatch === "function") resumeTotemSoundscapeAfterPotlatch();
+
+  if (typeof invalidateTotemGeometry === "function") invalidateTotemGeometry();
+  if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+  if (typeof saveTotemProgressToStorage === "function") saveTotemProgressToStorage();
+  if (typeof showPotlatchCompletionDialogue === "function") showPotlatchCompletionDialogue();
 }
 
 /** Fill ratio for the active totem tier (0..1). */
@@ -48,11 +276,38 @@ function totemTierFillRatio(level) {
   return c / act.length;
 }
 
+/** First tier that is not fully carved (for Longhouse “next” highlight), or `null` if all complete. */
+function totemFirstIncompleteTier() {
+  for (let l = 1; l <= 3; l++) {
+    if (totemTierFillRatio(l) < 0.995) return l;
+  }
+  return null;
+}
+
 /** Wall-clock target for completing one animal tier at steady snag + fragment rates (~4 minutes). */
 const TOTEM_TARGET_TIER_DURATION_MS = 4 * 60 * 1000;
 
 /** Midpoint of the 1500–2000 carved-point band per animal (geometry caps subsampled meshes to this). */
 const TOTEM_EXPECTED_POINTS_PER_TIER = 1750;
+
+/** TotemForge suite semver (UI + service worker generation). */
+const TOTEM_SUITE_VERSION = "1.4.0";
+
+/** KW’ÉKW’E Spirit Eye: ghost gaze + canvas shimmer from this carve ratio onward (final 10%). */
+const TOTEM_SPIRIT_EYE_FILL_FRAC = 0.9;
+
+/**
+ * v1.3 KW’ÉTL’EN mobile grounding: shifts the stacked pole + Salmon anchor toward the bottom of the viewport
+ * (fraction of window height, added to tier stack Y in `computeTotemLayout`).
+ */
+const TOTEM_MOBILE_GROUND_OFFSET_FRAC = 0.045;
+
+/** KW’ÉTL’EN triple-circle tier may retain slightly more harvest indices before `capTotemLevelPoints` subsampling. */
+const TOTEM_ORCA_MAX_TRIGGER_POINTS = 2200;
+
+/** KW’ÉKW’E apex tier: ~2× Salmon point budget so the crown carve requires proportionally more lands. */
+const TOTEM_OSPREY_MAX_TRIGGER_POINTS =
+  typeof TOTEM_EXPECTED_POINTS_PER_TIER === "number" ? TOTEM_EXPECTED_POINTS_PER_TIER * 2 : 3500;
 
 /** Cedar Snag harvest burst size (spawnHarvestFragments in physics.js). */
 const TOTEM_FRAGMENTS_PER_SNAG_MIN = 15;
@@ -91,8 +346,8 @@ const CEDAR_SNAG_APPROACH_EASE_START_PX = 340;
 /** Speed multiplier at the aim point when fully inside the ease radius (smoothstep). */
 const CEDAR_SNAG_APPROACH_EASE_MIN_SPEED_MUL = 0.5;
 
-/** Snag motion targets this screen Y fraction — matches Master Log center (`geometry.js` drawMasterTotemLog). */
-const CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC = 0.6;
+/** Snag motion targets this screen Y fraction — aligned with v1.3 grounded log (`geometry.js` + `totemMasterLogCenterYFrac`). */
+const CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC = 0.84;
 
 /** Generous pointer radius for shattering (sweep-friendly, not FPS-style aiming). */
 const CEDAR_SNAG_POINTER_HIT_RADIUS_PX = 40;
@@ -214,6 +469,15 @@ function finalizeOspreyTierSolid() {
     if (pts[i]) pts[i].active = true;
   }
   if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+}
+
+/** Solid-fill tier mesh before Potlatch (Longhouse flow). */
+function finalizeForgeTierForCeremony(tier) {
+  if (typeof totemPracticeMode !== "undefined" && totemPracticeMode) return;
+  if (tier === 1 && typeof finalizeSalmonTierSolid === "function") finalizeSalmonTierSolid();
+  else if (tier === 2 && typeof finalizeOrcaTierSolid === "function") finalizeOrcaTierSolid();
+  else if (tier === 3 && typeof finalizeOspreyTierSolid === "function") finalizeOspreyTierSolid();
+  if (typeof saveTotemProgressToStorage === "function") saveTotemProgressToStorage();
 }
 
 /**
@@ -383,6 +647,84 @@ function activateTotemPoint(level, index) {
   bumpTotemSectionPaint(level, sec, TOTEM_SECTION_PAINT_BUMP);
 
   if (typeof requestTotemCacheRedraw === "function") requestTotemCacheRedraw();
+  if (typeof scheduleTotemProgressSave === "function") scheduleTotemProgressSave();
+}
+
+function packTotemActivationBits(level) {
+  const arr = totemActivatedByLevel[level];
+  if (!arr?.length) return "";
+  let s = "";
+  for (let i = 0; i < arr.length; i++) s += arr[i] ? "1" : "0";
+  return s;
+}
+
+function saveTotemProgressToStorage() {
+  if (typeof totemPracticeMode !== "undefined" && totemPracticeMode) return;
+  try {
+    const currentLevel =
+      typeof totemFirstIncompleteTier === "function" ? totemFirstIncompleteTier() ?? 4 : 1;
+    const payload = {
+      v: 1,
+      currentLevel,
+      a1: packTotemActivationBits(1),
+      a2: packTotemActivationBits(2),
+      a3: packTotemActivationBits(3),
+      runComplete: !!totemRunComplete,
+    };
+    localStorage.setItem(TOTEM_PROGRESS_JSON_KEY, JSON.stringify(payload));
+    localStorage.setItem(TOTEM_PROGRESS_LEVEL_KEY, String(currentLevel));
+  } catch (_) {}
+}
+
+function scheduleTotemProgressSave() {
+  if (typeof totemPracticeMode !== "undefined" && totemPracticeMode) return;
+  if (_totemProgressSaveTimer != null) window.clearTimeout(_totemProgressSaveTimer);
+  _totemProgressSaveTimer = window.setTimeout(() => {
+    _totemProgressSaveTimer = null;
+    saveTotemProgressToStorage();
+  }, 400);
+}
+
+function tryLoadTotemProgressPending() {
+  try {
+    const raw = localStorage.getItem(TOTEM_PROGRESS_JSON_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return o && o.v === 1 ? o : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Called from `geometry.js` once carved point arrays exist — merges disk bits into `totemActivatedByLevel`.
+ */
+function applyPendingTotemProgressHydration() {
+  const p = pendingTotemProgressJson;
+  if (!p || p.v !== 1) return;
+  for (let lv = 1; lv <= 3; lv++) {
+    const str = p["a" + lv];
+    const arr = totemActivatedByLevel[lv];
+    if (!str || !arr?.length) continue;
+    const n = Math.min(arr.length, str.length);
+    for (let i = 0; i < n; i++) arr[i] = str.charAt(i) === "1";
+  }
+  if (typeof totemRunComplete === "boolean") totemRunComplete = !!p.runComplete;
+  const cl = typeof p.currentLevel === "number" ? p.currentLevel : 1;
+  if (cl >= 1 && cl <= 3) {
+    totemLevel = cl;
+    totemHarvestTierUnlocked = Math.max(
+      typeof totemHarvestTierUnlocked === "number" ? totemHarvestTierUnlocked : 1,
+      cl
+    );
+    forgeTargetLevel = cl;
+  } else if (cl === 4) {
+    totemLevel = 3;
+    forgeTargetLevel = 3;
+    totemHarvestTierUnlocked = 3;
+    totemRunComplete = true;
+  }
+  pendingTotemProgressJson = null;
 }
 
 function salmonFillRatio() {
@@ -401,6 +743,20 @@ function clearAllTotemActivated() {
   resetTotemAscensionState();
   resetSalmonHarvestPresentationState();
   resetTotemRunCompletionState();
+  if (typeof TOTEM_LONGHOUSE_FORGE !== "undefined" && TOTEM_LONGHOUSE_FORGE) {
+    totemAppPhase = TOTEM_PHASE_GALLERY;
+    forgeTargetLevel = 1;
+    totemPotlatchCeremony = null;
+    totemLevel = 1;
+    totemHarvestTierUnlocked = 1;
+  }
+  totemPracticeMode = false;
+  practiceMotorSkillTier = 1;
+  _totemPracticeProgressBackup = null;
+  try {
+    localStorage.removeItem(TOTEM_PROGRESS_JSON_KEY);
+    localStorage.removeItem(TOTEM_PROGRESS_LEVEL_KEY);
+  } catch (_) {}
 }
 
 /** Foveal anchoring: spike when an EMDR snag crosses the vertical midline (engine decays). */
@@ -439,6 +795,7 @@ let totemSalmonCompletionGlowUntilMs = 0;
 let _pacerGroundedTextUntilMs = 0;
 
 function maybeSalmonPaintCompletionAfterHarvestLand(nowMs = performance.now(), harvestLevel) {
+  if (typeof TOTEM_LONGHOUSE_FORGE !== "undefined" && TOTEM_LONGHOUSE_FORGE) return;
   if (typeof totemLevel !== "number" || totemLevel !== 1) return;
   if (harvestLevel !== 1) return;
   salmonHarvestPaintLandCount++;
@@ -477,6 +834,7 @@ function beginTotemOrcaAscension(nowMs = performance.now()) {
 }
 
 function maybeOrcaPaintCompletionAfterHarvestLand(nowMs = performance.now(), harvestLevel) {
+  if (typeof TOTEM_LONGHOUSE_FORGE !== "undefined" && TOTEM_LONGHOUSE_FORGE) return;
   if (typeof totemLevel !== "number" || totemLevel !== 2) return;
   if (harvestLevel !== 2) return;
   orcaHarvestPaintLandCount++;
@@ -501,15 +859,17 @@ function resetSalmonHarvestPresentationState() {
   totemLogOutlineFlashUntilMs = 0;
 }
 
-/** Osprey (crown tier) paint completion — mirrors Salmon 400-stick milestone. */
+/** Osprey (crown tier) paint completion — 2× Salmon stick milestone (legacy non-Longhouse path). */
 let ospreyHarvestPaintLandCount = 0;
-const OSPREY_PAINT_COMPLETION_THRESHOLD = 400;
+const OSPREY_PAINT_COMPLETION_THRESHOLD =
+  typeof SALMON_PAINT_COMPLETION_THRESHOLD === "number" ? SALMON_PAINT_COMPLETION_THRESHOLD * 2 : 800;
 
 /** Run finale: stop snags until Escape reset; full-pole glow + STABILIZED pacer. */
 let totemRunComplete = false;
 let _pacerStabilizedTextUntilMs = 0;
 
 function maybeOspreyPaintCompletionAfterHarvestLand(nowMs = performance.now(), harvestLevel) {
+  if (typeof TOTEM_LONGHOUSE_FORGE !== "undefined" && TOTEM_LONGHOUSE_FORGE) return;
   if (totemRunComplete) return;
   if (typeof totemLevel !== "number" || totemLevel !== 3) return;
   if (harvestLevel !== 3) return;
@@ -574,10 +934,22 @@ const MODE_ORCA_WISDOM = 3; // KW’ÉTL’EN — orbiting / spiral
 
 let currentMode = MODE_NEURAL_WEAVER;
 
+/**
+ * Coast Salish animal names — permanent phonetic guides (lowercase syllable hints).
+ * Used in HUD, gallery canvas, mentor copy, and tooltips.
+ */
+const SALISH_PHONETIC = Object.freeze({
+  SXT_EKW: "suh-kh-t-ay-kw",
+  KW_EKWE: "kwa-kwa",
+  STEXEM: "stuh-ay-khuhm",
+  KW_ETLEN: "kw-et-lun",
+});
+
 const MODE_REGISTRY = Object.freeze([
   {
     id: "NEURAL_WEAVER",
     label: "SXT’EKW",
+    phonetic: SALISH_PHONETIC.SXT_EKW,
     subtitle: "Neural Weaver",
     movement: "Horizontal EMDR",
     hue: 195,
@@ -586,6 +958,7 @@ const MODE_REGISTRY = Object.freeze([
   {
     id: "OSPREY_SCOUT",
     label: "KW’ÉKW’E",
+    phonetic: SALISH_PHONETIC.KW_EKWE,
     subtitle: "Osprey Scout",
     movement: "Saccadic grid",
     hue: 205,
@@ -594,6 +967,7 @@ const MODE_REGISTRY = Object.freeze([
   {
     id: "SALMON_RUN",
     label: "ST’ÉXEM",
+    phonetic: SALISH_PHONETIC.STEXEM,
     subtitle: "Salmon Run",
     movement: "Vertical vent",
     hue: 290,
@@ -602,6 +976,7 @@ const MODE_REGISTRY = Object.freeze([
   {
     id: "ORCA_WISDOM",
     label: "KW’ÉTL’EN",
+    phonetic: SALISH_PHONETIC.KW_ETLEN,
     subtitle: "Orca Wisdom",
     movement: "Orbiting / spiral",
     hue: 40,
@@ -630,9 +1005,30 @@ function normalizeModeId(modeId) {
  * Indexed by totemLevel 1..3 — see TOTEM_LEVELS.
  */
 const TOTEM_LEVEL_REGISTRY = Object.freeze({
-  1: { key: "SALMON", role: "base", label: "Salmon", anchor: "Groundedness" },
-  2: { key: "ORCA", role: "middle", label: "Orca", anchor: "Community & rhythm" },
-  3: { key: "OSPREY", role: "crown", label: "Osprey", anchor: "Vision & focus" },
+  1: {
+    key: "SALMON",
+    role: "base",
+    label: "Salmon",
+    salish: "ST’ÉXEM",
+    phonetic: SALISH_PHONETIC.STEXEM,
+    anchor: "Groundedness",
+  },
+  2: {
+    key: "ORCA",
+    role: "middle",
+    label: "Orca",
+    salish: "KW’ÉTL’EN",
+    phonetic: SALISH_PHONETIC.KW_ETLEN,
+    anchor: "Community & rhythm",
+  },
+  3: {
+    key: "OSPREY",
+    role: "crown",
+    label: "Osprey",
+    salish: "KW’ÉKW’E",
+    phonetic: SALISH_PHONETIC.KW_EKWE,
+    anchor: "Vision & focus",
+  },
 });
 
 // Totem Pole progression (Salmon base → Orca middle → Osprey crown)
@@ -642,21 +1038,24 @@ const TOTEM_LEVELS = Object.freeze([
   {
     id: "SALMON",
     tierRole: "base",
-    label: "The Salmon (ST’ÉXEM)",
+    label: "ST’ÉXEM",
+    phonetic: SALISH_PHONETIC.STEXEM,
     focus: "Groundedness",
     threshold: TOTEM_EXPECTED_POINTS_PER_TIER,
   },
   {
     id: "ORCA",
     tierRole: "middle",
-    label: "The Orca (KW’ÉTL’EN)",
+    label: "KW’ÉTL’EN",
+    phonetic: SALISH_PHONETIC.KW_ETLEN,
     focus: "Community & Rhythm",
     threshold: TOTEM_EXPECTED_POINTS_PER_TIER,
   },
   {
     id: "OSPREY",
     tierRole: "crown",
-    label: "The Osprey (KW’ÉKW’E)",
+    label: "KW’ÉKW’E",
+    phonetic: SALISH_PHONETIC.KW_EKWE,
     focus: "Vision & Focus",
     threshold: TOTEM_EXPECTED_POINTS_PER_TIER,
   },
@@ -697,6 +1096,11 @@ function setMode(modeId) {
   const buttons = document.querySelectorAll(".modes button[data-mode]");
   for (const b of buttons) {
     b.setAttribute("aria-pressed", normalizeModeId(b.dataset.mode) === currentMode ? "true" : "false");
+    const idx = parseInt(b.dataset.mode, 10);
+    const m = MODE_REGISTRY[idx];
+    if (m?.label && m?.phonetic) {
+      b.title = m.subtitle ? `${m.label} (${m.phonetic}) — ${m.subtitle}` : `${m.label} (${m.phonetic})`;
+    }
   }
 }
 

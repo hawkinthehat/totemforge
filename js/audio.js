@@ -34,6 +34,11 @@
   let clickPanRefMs = -1e9;
   const CLICK_PAN_HALF_LIFE_MS = 340;
 
+  /** Potlatch: silence vagus drone + atmosphere while ceremony.mp3 plays. */
+  let potlatchDroneSuspended = false;
+  /** HTMLAudioElement for Potlatch ceremony (not Web Audio graph). */
+  let potlatchCeremonyAudio = null;
+
   function clamp(v, a, b) {
     return Math.max(a, Math.min(b, v));
   }
@@ -202,6 +207,105 @@
       : '<span class="audio-mute-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" fill="currentColor"/></svg></span>';
   }
 
+  window.suspendTotemSoundscapeForPotlatch = function suspendTotemSoundscapeForPotlatch() {
+    potlatchDroneSuspended = true;
+    const ctx = ac;
+    if (ctx && pacerGain && atmGain) {
+      const t = ctx.currentTime;
+      try {
+        pacerGain.gain.cancelScheduledValues(t);
+        pacerGain.gain.setTargetAtTime(0, t, 0.045);
+        atmGain.gain.cancelScheduledValues(t);
+        atmGain.gain.setTargetAtTime(0, t, 0.045);
+      } catch (_) {}
+    }
+  };
+
+  window.resumeTotemSoundscapeAfterPotlatch = function resumeTotemSoundscapeAfterPotlatch() {
+    potlatchDroneSuspended = false;
+  };
+
+  window.playTotemPotlatchCeremonyAudio = function playTotemPotlatchCeremonyAudio() {
+    if (userMuted) return;
+    try {
+      if (potlatchCeremonyAudio) {
+        potlatchCeremonyAudio.pause();
+        potlatchCeremonyAudio.src = "";
+      }
+      potlatchCeremonyAudio = new Audio("ceremony.mp3");
+      potlatchCeremonyAudio.volume = 0.88;
+      potlatchCeremonyAudio.play().catch(() => {});
+    } catch (_) {
+      potlatchCeremonyAudio = null;
+    }
+  };
+
+  /**
+   * KW’ÉKW’E Master Finale: layered high flute crescendo over ceremony.mp3 (Web Audio; respects mute / unlock).
+   */
+  window.playTotemOspreyFinaleFluteCrescendo = function playTotemOspreyFinaleFluteCrescendo() {
+    const ctx = ensureContext();
+    if (!ctx || !unlocked || userMuted) return;
+    const t0 = ctx.currentTime;
+    const dur = 2.85;
+    const master = masterGain || ctx.destination;
+
+    const mkVoice = (baseHz, detune, startHz, endHz, gainPeak) => {
+      const o = ctx.createOscillator();
+      o.type = "triangle";
+      o.detune.value = detune;
+      o.frequency.setValueAtTime(startHz, t0);
+      o.frequency.exponentialRampToValueAtTime(Math.max(80, endHz), t0 + dur * 0.88);
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass";
+      f.Q.setValueAtTime(6.5, t0);
+      f.frequency.setValueAtTime(baseHz * 2.2, t0);
+      f.frequency.exponentialRampToValueAtTime(baseHz * 5.8, t0 + dur * 0.72);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(gainPeak, t0 + 0.55);
+      g.gain.exponentialRampToValueAtTime(gainPeak * 1.08, t0 + dur * 0.62);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      o.connect(f);
+      f.connect(g);
+      g.connect(master);
+      o.start(t0);
+      o.stop(t0 + dur + 0.03);
+    };
+
+    mkVoice(880, 3, 660, 2340, 0.11);
+    mkVoice(1320, -5, 990, 3520, 0.065);
+    const air = ctx.createOscillator();
+    air.type = "sine";
+    air.frequency.setValueAtTime(3520, t0);
+    const ag = ctx.createGain();
+    ag.gain.setValueAtTime(0.0001, t0);
+    ag.gain.exponentialRampToValueAtTime(0.028, t0 + dur * 0.45);
+    ag.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.95);
+    air.connect(ag);
+    ag.connect(master);
+    air.start(t0);
+    air.stop(t0 + dur);
+  };
+
+  window.stopTotemPotlatchCeremonyAudio = function stopTotemPotlatchCeremonyAudio() {
+    if (potlatchCeremonyAudio) {
+      try {
+        potlatchCeremonyAudio.pause();
+        potlatchCeremonyAudio.currentTime = 0;
+        potlatchCeremonyAudio.src = "";
+      } catch (_) {}
+      potlatchCeremonyAudio = null;
+    }
+  };
+
+  /** `true` when ceremony track finished or was never started (muted / error). */
+  window.isPotlatchCeremonyAudioComplete = function isPotlatchCeremonyAudioComplete() {
+    if (!potlatchCeremonyAudio) return true;
+    if (potlatchCeremonyAudio.error) return true;
+    return potlatchCeremonyAudio.ended;
+  };
+
   window.unlockTotemAudio = function unlockTotemAudio() {
     const ctx = ensureContext();
     if (!ctx) return;
@@ -299,7 +403,7 @@
   /**
    * Legacy entry — prefers bilateral pan from grid column / click.
    */
-  window.playWoodSnap = function playWoodSnap(clientX, gridColumn, opts) {
+    window.playWoodSnap = function playWoodSnap(clientX, gridColumn, opts) {
     const ctx = ensureContext();
     if (!ctx || userMuted) return;
 
@@ -313,8 +417,59 @@
     window.playWoodTapStereo(pan, opts);
   };
 
+  /** Potlatch finale — crisp snap + brief tonal bloom (ceremony completion). */
+  window.playSpiritSnap = function playSpiritSnap() {
+    const ctx = ensureContext();
+    if (!ctx || !unlocked || userMuted) return;
+    const t0 = ctx.currentTime;
+    const dur = 0.072;
+    const noiseBuf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuf;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(2800, t0);
+    bp.Q.setValueAtTime(2.4, t0);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t0);
+    ng.gain.exponentialRampToValueAtTime(0.48, t0 + 0.003);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    noise.connect(bp);
+    bp.connect(ng);
+    ng.connect(masterGain || ctx.destination);
+    noise.start(t0);
+    noise.stop(t0 + dur + 0.015);
+
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1888, t0);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t0);
+    og.gain.exponentialRampToValueAtTime(0.14, t0 + 0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    osc.connect(og);
+    og.connect(masterGain || ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.18);
+  };
+
   window.updateTotemSoundscape = function updateTotemSoundscape(nowMs, breath, snagArray, modeId) {
     if (!unlocked || !ac || !pacerGain || userMuted) return;
+
+    if (potlatchDroneSuspended) {
+      const t = ac.currentTime;
+      try {
+        pacerGain.gain.cancelScheduledValues(t);
+        pacerGain.gain.setTargetAtTime(0, t, 0.02);
+        if (atmGain) {
+          atmGain.gain.cancelScheduledValues(t);
+          atmGain.gain.setTargetAtTime(0, t, 0.02);
+        }
+      } catch (_) {}
+      return;
+    }
 
     const pulse = breathPulseFromTime(nowMs);
     const breath01 = typeof breath?.breath01 === "number" ? breath.breath01 : pulse;

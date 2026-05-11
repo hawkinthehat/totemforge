@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" width="240" height="160" fill="none" aria-hidden="true">
+  <title>KWÉTLEN triple-circle silver ghost</title>
+  <ellipse cx="120" cy="88" rx="108" ry="62" stroke="#e2e8f0" stroke-width="3.2" opacity="0.92"/>
+  <ellipse cx="120" cy="88" rx="66" ry="40" stroke="#cbd5e1" stroke-width="2.8" opacity="0.88"/>
+  <ellipse cx="120" cy="88" rx="32" ry="20" stroke="#94a3b8" stroke-width="2.4" opacity="0.82"/>
+  <path d="M 120 26 Q 108 52 120 62 Q 132 52 120 26" stroke="#e2e8f0" stroke-width="2" opacity="0.75"/>
+  <ellipse cx="154" cy="78" rx="14" ry="10" stroke="#f1f5f9" stroke-width="1.8" opacity="0.7"/>
+</svg>

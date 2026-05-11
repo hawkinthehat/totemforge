@@ -1,7 +1,7 @@
 {
-  "name": "TotemForge Neural Suite v1.0",
+  "name": "TotemForge Neural Suite v1.4.0",
   "short_name": "TotemForge",
-  "description": "Salish-centered vagus breath totem — Neural Suite v1.0",
+  "description": "Salish-centered vagus breath totem — Neural Suite v1.4.0",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

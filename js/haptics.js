@@ -6,6 +6,8 @@ const HAPTIC = Object.freeze({
   FRAGMENT_LAND_MIN_GAP_MS: 48,
   /** Contralateral / wrong-side error — double pulse (vibrate, gap, vibrate). */
   WRONG_SIDE: Object.freeze([40, 60, 40]),
+  /** Orca bilateral pulse — both snags cleared within the timing window (double-click feel). */
+  BILATERAL_PAIR_SUCCESS: Object.freeze([12, 28, 12, 28, 20]),
   /** End of inhale — log at max expansion (micro tick). */
   INHALE_PEAK_MS: 6,
   /** Breath pacer: soft thrum at inhale phase boundary (eyes can stay on sweep). */
@@ -76,7 +78,11 @@ function hapticBreathInhalePeak() {
   totemVibrate(HAPTIC.INHALE_PEAK_MS);
 }
 
-/** Wrong-side / contralateral miss — navigator.vibrate([50, 30, 50]). */
+/** Orca bilateral pulse cleared within the timing window (double-click feel). */
+function hapticBilateralPulseSuccess() {
+  totemVibrate(HAPTIC.BILATERAL_PAIR_SUCCESS);
+}
+
 function hapticWrongSideClick() {
   totemVibrate(HAPTIC.WRONG_SIDE);
 }

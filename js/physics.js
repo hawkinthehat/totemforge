@@ -19,7 +19,68 @@ function snagPointerHitRadiusPx(snag) {
   return Math.min(cap, precise);
 }
 
-/** Strict contralateral: Salmon vent uses half-screen rules; other modes use snag side vs click side. */
+/** 1 Salmon / 2 Orca motor / 3 Osprey motor in Longhouse forge only; otherwise null. */
+function getForgeMotorTier() {
+  if (typeof TOTEM_LONGHOUSE_FORGE === "undefined" || !TOTEM_LONGHOUSE_FORGE) return null;
+  if (typeof totemAppPhase !== "string" || totemAppPhase !== "forge") return null;
+  if (typeof totemPracticeMode !== "undefined" && totemPracticeMode) {
+    const pm =
+      typeof practiceMotorSkillTier === "number" ? practiceMotorSkillTier | 0 : 1;
+    return pm >= 1 && pm <= 3 ? pm : 1;
+  }
+  const tl = typeof forgeTargetLevel === "number" ? forgeTargetLevel : null;
+  return tl >= 1 && tl <= 3 ? tl : null;
+}
+
+let _forgeMotorOrcaSpawnCount = 0;
+
+function peekForgeOrcaBilateralPulseNext() {
+  if (typeof getForgeMotorTier !== "function" || getForgeMotorTier() !== 2) return false;
+  return (_forgeMotorOrcaSpawnCount + 1) % 4 === 0;
+}
+
+function incrementForgeMotorOrcaSpawnCount() {
+  if (typeof getForgeMotorTier === "function" && getForgeMotorTier() === 2) _forgeMotorOrcaSpawnCount++;
+}
+
+/**
+ * KW’ÉKW’E forge (tier 3): Red (RIGHT motor) → tap left hemifield; Teal (LEFT motor) → tap right;
+ * mirrored hit locus when `contraMirrorTap` is set. Snags bias to red on the right, teal on the left.
+ * @returns {number} min squared distance to a valid target, or Infinity if tap hemifield forbids a hit.
+ */
+function forgeMotorMinHitDistSq(snag, px, py) {
+  const w = window.innerWidth || 1;
+  const halfW = w * 0.5;
+  const mx = w - snag.x;
+  const my = snag.y;
+  const R = snagPointerHitRadiusPx(snag);
+  const R2 = R * R;
+  /** KW’ÉKW’E finale: red (RIGHT motor) → tap left hemifield; teal (LEFT motor) → tap right (cross-tap). */
+  const needLeft = snag.motorHand === "RIGHT";
+  const tapLeft = px < halfW;
+  if (needLeft && !tapLeft) return Infinity;
+  if (!needLeft && tapLeft) return Infinity;
+
+  const snagLeft = snag.x < halfW;
+  const natural = (needLeft && snagLeft) || (!needLeft && !snagLeft);
+  const dR2 = (px - snag.x) ** 2 + (py - snag.y) ** 2;
+  const dM2 = (px - mx) ** 2 + (py - my) ** 2;
+
+  let best = Infinity;
+  if (natural && dR2 <= R2) best = Math.min(best, dR2);
+  if (snag.contraMirrorTap && !natural && dM2 <= R2) best = Math.min(best, dM2);
+  return best;
+}
+
+function snagPointerHitDistanceSq(snag, px, py) {
+  if (typeof getForgeMotorTier === "function" && getForgeMotorTier() === 3 && snag?.motorHand) {
+    return forgeMotorMinHitDistSq(snag, px, py);
+  }
+  const dx = px - snag.x;
+  const dy = py - snag.y;
+  return dx * dx + dy * dy;
+}
+
 /**
  * Smooth deceleration toward Master Log aim (cx, cy): full cruise outside ease radius,
  * then ease down for a deliberate final carve.
@@ -50,6 +111,11 @@ function snagContralateralAllowsShatter(snag, canvasX, canvasY) {
     const clickedLeft = canvasX < halfW;
     return snagTop === clickedLeft;
   }
+  if (typeof getForgeMotorTier === "function" && getForgeMotorTier() === 3 && snag?.motorHand) {
+    const R = snagPointerHitRadiusPx(snag);
+    const d2 = forgeMotorMinHitDistSq(snag, canvasX, canvasY);
+    return Number.isFinite(d2) && d2 <= R * R;
+  }
   if (snag.x < halfW && canvasX >= halfW) return false;
   if (snag.x >= halfW && canvasX < halfW) return false;
   return true;
@@ -67,8 +133,10 @@ function findTomahawkSnagHitIndexUnfiltered(canvasX, canvasY) {
   for (let i = 0; i < tomahawks.length; i++) {
     const s = tomahawks[i];
     const R = snagPointerHitRadiusPx(s);
-    const d = Math.hypot(canvasX - s.x, canvasY - s.y);
-    if (d <= R && d < bestD) {
+    const d2 = snagPointerHitDistanceSq(s, canvasX, canvasY);
+    if (!Number.isFinite(d2) || d2 > R * R) continue;
+    const d = Math.sqrt(d2);
+    if (d < bestD) {
       bestD = d;
       best = i;
     }
@@ -84,8 +152,10 @@ function findTomahawkSnagHitIndex(canvasX, canvasY) {
     const s = tomahawks[i];
     if (!snagContralateralAllowsShatter(s, canvasX, canvasY)) continue;
     const R = snagPointerHitRadiusPx(s);
-    const d = Math.hypot(canvasX - s.x, canvasY - s.y);
-    if (d <= R && d < bestD) {
+    const d2 = snagPointerHitDistanceSq(s, canvasX, canvasY);
+    if (!Number.isFinite(d2) || d2 > R * R) continue;
+    const d = Math.sqrt(d2);
+    if (d < bestD) {
       bestD = d;
       best = i;
     }
@@ -169,6 +239,7 @@ function resetCedarSnagSpawnPlanningState(nowMs = performance.now()) {
   _cedarSalmonAlternateTop = true;
   _cedarSpiralPhaseStep = 0;
   _cedarEdgeSpawnFlip = true;
+  _forgeMotorOrcaSpawnCount = 0;
   if (typeof resetCedarFlowDifficulty === "function") resetCedarFlowDifficulty();
   resetCedarSnagSpawnSchedule(nowMs);
 }
@@ -311,7 +382,7 @@ function fragmentReleaseLock(f) {
   if (totemLockCounts[f.lockedIndex] > 0) totemLockCounts[f.lockedIndex]--;
 }
 
-/** Salmon Level 1: harvest tends to seat soul ovoids (eyes/joints) before body mass. */
+/** Harvest: seat soul / trigger zones (soulPriority 0 → 1 → 2) before body mass — all tiers use point soulPriority when present. */
 function harvestOrderSoulFirst(unfilled, pts) {
   const b0 = [];
   const b1 = [];
@@ -336,7 +407,7 @@ function pickHarvestDestinationIndices(level, want) {
   for (let i = 0; i < arr.length; i++) if (!arr[i]) unfilled.push(i);
   if (unfilled.length === 0) return [];
   let order = unfilled;
-  if (level === 1 && pts?.length && typeof pts[0]?.soulPriority === "number") {
+  if (pts?.length && typeof pts[0]?.soulPriority === "number") {
     order = harvestOrderSoulFirst(unfilled, pts);
   } else {
     order = unfilled.slice();
@@ -540,12 +611,126 @@ function normalizeSnagTotemLevel(lv) {
   return Math.min(3, Math.max(1, n));
 }
 
+function mixHexColors(hexA, hexB, t) {
+  const u = Math.max(0, Math.min(1, t));
+  const parse = (h) => ({
+    r: parseInt(h.slice(1, 3), 16),
+    g: parseInt(h.slice(3, 5), 16),
+    b: parseInt(h.slice(5, 7), 16),
+  });
+  const A = parse(hexA);
+  const B = parse(hexB);
+  const L = (x, y) => Math.round(x + (y - x) * u);
+  const r = L(A.r, B.r);
+  const g = L(A.g, B.g);
+  const b = L(A.b, B.b);
+  return (
+    "#" +
+    [r, g, b]
+      .map((v) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0"))
+      .join("")
+  );
+}
+
+/** Forge: harvest shards shift crimson → teal as the active animal approaches 100%. */
+function forgeHarvestFillBlend01() {
+  if (typeof TOTEM_LONGHOUSE_FORGE === "undefined" || !TOTEM_LONGHOUSE_FORGE) return 0;
+  if (typeof totemAppPhase !== "string" || totemAppPhase !== "forge") return 0;
+  if (typeof forgeTargetLevel !== "number" || typeof totemTierFillRatio !== "function") return 0;
+  return totemTierFillRatio(forgeTargetLevel);
+}
+
+/** KW’ÉKW’E (tier 3): 0–40% crimson, 40–90% toward teal, 90–100% silver-white climax + shimmer. */
+function tintHarvestPaletteOspreyFinale(pal, t) {
+  const u = Math.max(0, Math.min(1, t));
+  const CRIM = "#7f1d1d";
+  const CRIM_MID = "#991b1b";
+  const TEAL = "#14b8a6";
+  const TEAL_HI = "#2dd4bf";
+  const IRIS = "#5eead4";
+  const SILVER = "#f8fafc";
+  const SILV_SOFT = "#e2e8f0";
+  const out = { ...pal };
+  const now = typeof performance !== "undefined" ? performance.now() : 0;
+  const shimmer = 0.72 + 0.28 * Math.sin(now * 0.00315);
+  if (u < 0.4) {
+    const k = u / 0.4;
+    out.harvestCore = mixHexColors(CRIM, CRIM_MID, k);
+    out.harvestMid = mixHexColors("#991b1b", "#b91c1c", k);
+    out.harvestEdge = mixHexColors("#431407", "#7f1d1d", k);
+    out.harvestGlow = `rgba(185, 28, 28, ${0.4 + 0.2 * k})`;
+    out.harvestTrail = `rgba(153, 27, 27, ${0.5 + 0.12 * k})`;
+  } else if (u < 0.9) {
+    const k = (u - 0.4) / 0.5;
+    const hi = k * k * (3 - 2 * k);
+    out.harvestCore = mixHexColors(CRIM_MID, TEAL, hi);
+    out.harvestMid = mixHexColors("#b91c1c", TEAL_HI, hi);
+    out.harvestEdge = mixHexColors("#7f1d1d", "#0f766e", hi);
+    out.splinterInk = mixHexColors("#451a03", "#134e4a", hi);
+    out.splinterAlt = mixHexColors("#57534e", IRIS, hi);
+    const gr = Math.round(153 + (45 - 153) * hi);
+    const gg = Math.round(27 + (212 - 27) * hi);
+    const gb = Math.round(27 + (184 - 27) * hi);
+    out.harvestGlow = `rgba(${gr}, ${gg}, ${gb}, ${0.48 + 0.22 * hi})`;
+    out.harvestTrail = `rgba(${Math.round(127 + 50 * hi)}, ${Math.round(29 + 170 * hi)}, ${Math.round(
+      27 + 170 * hi
+    )}, ${0.52 + 0.2 * hi})`;
+  } else {
+    const k = (u - 0.9) / 0.1;
+    const hi = k * k * (3 - 2 * k);
+    const silMix = Math.min(1, 0.35 + 0.65 * hi * shimmer);
+    out.harvestCore = mixHexColors(TEAL, SILVER, silMix);
+    out.harvestMid = mixHexColors(TEAL_HI, SILVER, Math.min(1, 0.5 + 0.5 * hi * shimmer));
+    out.harvestEdge = mixHexColors("#0f766e", SILV_SOFT, 0.25 + 0.55 * hi);
+    out.harvestHi = `rgba(248, 250, 252, ${0.9 + 0.1 * hi * shimmer})`;
+    out.harvestGlow = `rgba(248, 250, 252, ${0.42 + 0.38 * hi * shimmer})`;
+    out.harvestTrail = `rgba(226, 232, 240, ${0.45 + 0.35 * hi * shimmer})`;
+    out.splinterAlt = mixHexColors(IRIS, SILVER, 0.35 + 0.55 * hi);
+    out.splinterHi = `rgba(248, 250, 252, ${0.75 + 0.22 * hi})`;
+  }
+  return out;
+}
+
+function tintHarvestPaletteForgeCeremony(pal) {
+  if (
+    typeof forgeTargetLevel === "number" &&
+    forgeTargetLevel === 3 &&
+    typeof totemTierFillRatio === "function"
+  ) {
+    return tintHarvestPaletteOspreyFinale(pal, totemTierFillRatio(3));
+  }
+  const t = forgeHarvestFillBlend01();
+  if (t < 0.003) return pal;
+  const CRIMSON = "#7f1d1d";
+  const TEAL = "#14b8a6";
+  const IRIS = "#5eead4";
+  const u = t * t * (3 - 2 * t);
+  const hi = t > 0.82 ? t + (1 - t) * 0.35 * Math.sin(t * 18.7) * 0.08 : t;
+  const out = { ...pal };
+  const mixA = CRIMSON;
+  const mixB = t > 0.88 ? IRIS : TEAL;
+  out.harvestCore = mixHexColors(mixA, mixB, hi);
+  out.harvestMid = mixHexColors("#b91c1c", "#2dd4bf", hi);
+  out.harvestEdge = mixHexColors("#431407", "#0f766e", hi);
+  out.splinterInk = mixHexColors("#451a03", "#134e4a", hi);
+  out.splinterAlt = mixHexColors("#57534e", "#5eead4", hi);
+  const gr = Math.round(185 + (94 - 185) * hi);
+  const gg = Math.round(28 + (234 - 28) * hi);
+  const gb = Math.round(28 + (212 - 28) * hi);
+  out.harvestGlow = `rgba(${gr}, ${gg}, ${gb}, ${0.38 + 0.28 * hi})`;
+  out.harvestTrail = `rgba(${Math.round(127 + 80 * hi)}, ${Math.round(29 + 190 * hi)}, ${Math.round(
+    27 + 200 * hi
+  )}, ${0.52 + 0.18 * hi})`;
+  return out;
+}
+
 /** Paint colors inherited by harvest + trail fragments when a snag releases particles. */
 function fragmentPaletteFromSnagLevel(lv) {
   const L = normalizeSnagTotemLevel(lv);
+  let base;
   if (L === 1) {
     /** Level 1 Salmon — earthy red cedar carve */
-    return {
+    base = {
       harvestTrail: "rgba(254, 215, 170, 0.55)",
       harvestEdge: "#431407",
       harvestCore: "#7f1d1d",
@@ -557,10 +742,9 @@ function fragmentPaletteFromSnagLevel(lv) {
       splinterGhost: "rgba(248, 113, 113, 0.42)",
       splinterHi: "rgba(254, 202, 202, 0.55)",
     };
-  }
-  if (L === 2) {
+  } else if (L === 2) {
     /** Level 2 Orca — deep sea navy (#1e3a8a family) */
-    return {
+    base = {
       harvestTrail: "rgba(30, 58, 138, 0.48)",
       harvestEdge: "#172554",
       harvestCore: "#1e3a8a",
@@ -572,20 +756,22 @@ function fragmentPaletteFromSnagLevel(lv) {
       splinterGhost: "rgba(96, 165, 250, 0.4)",
       splinterHi: "rgba(219, 234, 254, 0.62)",
     };
+  } else {
+    /** Level 3 Osprey — silver (#f8fafc) + teal glow */
+    base = {
+      harvestTrail: "rgba(240, 253, 250, 0.58)",
+      harvestEdge: "#0f766e",
+      harvestCore: "#f8fafc",
+      harvestMid: "#ccfbf1",
+      harvestGlow: "rgba(45, 212, 191, 0.62)",
+      harvestHi: "rgba(255, 255, 255, 0.96)",
+      splinterInk: "#134e4a",
+      splinterAlt: "#14b8a6",
+      splinterGhost: "rgba(153, 246, 228, 0.52)",
+      splinterHi: "rgba(248, 250, 252, 0.78)",
+    };
   }
-  /** Level 3 Osprey — silver (#f8fafc) + teal glow */
-  return {
-    harvestTrail: "rgba(240, 253, 250, 0.58)",
-    harvestEdge: "#0f766e",
-    harvestCore: "#f8fafc",
-    harvestMid: "#ccfbf1",
-    harvestGlow: "rgba(45, 212, 191, 0.62)",
-    harvestHi: "rgba(255, 255, 255, 0.96)",
-    splinterInk: "#134e4a",
-    splinterAlt: "#14b8a6",
-    splinterGhost: "rgba(153, 246, 228, 0.52)",
-    splinterHi: "rgba(248, 250, 252, 0.78)",
-  };
+  return tintHarvestPaletteForgeCeremony(base);
 }
 
 /** Harvest stick paint: avoid rebuilding full totem offscreen cache every frame (~60Hz → costly). */
@@ -672,7 +858,11 @@ class Tomahawk {
     const cssH = window?.innerHeight ?? h;
     const cx = cssW * 0.5;
     const travelYFrac =
-      typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number" ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC : 0.6;
+      typeof window !== "undefined" && typeof window.totemMasterLogCenterYFrac === "function"
+        ? window.totemMasterLogCenterYFrac()
+        : typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number"
+          ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC
+          : 0.78;
     const cy = cssH * travelYFrac;
 
     const margin = 24;
@@ -700,6 +890,30 @@ class Tomahawk {
       this.vx = (dx / d) * speed * 0.42;
       this.vy = (dy / d) * speed;
       this._travelTargetPxPerSec = speed;
+    } else if (this.mode === MODE_ORCA_WISDOM && opts?.orcaBilateralPulse) {
+      /** Forge Orca bilateral pulse: mirrored pair, straight run to the log (no lateral swell). */
+      const slot = opts.bilateralSlot === "R" ? "R" : "L";
+      const side = slot === "L" ? -1 : 1;
+      this.x = side < 0 ? -margin : cssW + margin;
+      this.y =
+        typeof opts?.y === "number"
+          ? opts.y
+          : cy + (Math.random() - 0.5) * cssH * 0.06;
+      const dx = cx - this.x;
+      const dy = cy - this.y;
+      const d = Math.max(1, Math.hypot(dx, dy));
+      const spd =
+        (d / Math.max(0.5, this.travelTargetSec)) * flowBoost * this.speedVar * tierEnergyMul;
+      this.vx = (dx / d) * spd * 0.88;
+      this.vy = (dy / d) * spd * 0.88;
+      this._travelTargetPxPerSec = spd;
+      this.orcaWaveMode = true;
+      this.waveAmp = 0;
+      this.waveFreq = 1;
+      this.wavePhaseAccum = slot === "L" ? 0 : Math.PI;
+      this.orcaBilateralPulse = true;
+      this.bilateralPairId = opts.bilateralPairId ?? null;
+      this.bilateralSlot = slot;
     } else if (this.mode === MODE_ORCA_WISDOM && this.snagTotemLevel === 2) {
       /** KW’ÉTL’EN (Orca tier): edge spawn + sinusoidal swell toward the log. */
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -720,8 +934,15 @@ class Tomahawk {
     } else if (this.mode === MODE_ORCA_WISDOM && this.snagTotemLevel === 3) {
       /** KW’ÉKW’E (Osprey tier): spawn high, dive toward aim point. */
       this.ospreyDiveMode = true;
-      this.x = margin + Math.random() * Math.max(12, cssW - 2 * margin);
-      this.y = -margin - Math.random() * cssH * 0.36;
+      this.motorHand = opts?.motorHand ?? null;
+      this.contraMirrorTap = !!opts?.contraMirrorTap;
+      if (typeof opts?.x === "number" && typeof opts?.y === "number") {
+        this.x = opts.x;
+        this.y = opts.y;
+      } else {
+        this.x = margin + Math.random() * Math.max(12, cssW - 2 * margin);
+        this.y = -margin - Math.random() * cssH * 0.36;
+      }
       const dx = cx - this.x;
       const dy = cy - this.y;
       const d = Math.max(1, Math.hypot(dx, dy));
@@ -803,6 +1024,12 @@ class Tomahawk {
         this._travelTargetPxPerSec = spd;
       }
     }
+
+    this.orcaBilateralPulse = !!this.orcaBilateralPulse;
+    if (this.bilateralPairId === undefined) this.bilateralPairId = null;
+    if (this.bilateralSlot === undefined) this.bilateralSlot = null;
+    if (this.motorHand === undefined) this.motorHand = opts?.motorHand ?? null;
+    if (this.contraMirrorTap === undefined) this.contraMirrorTap = !!opts?.contraMirrorTap;
 
     this.life = 0;
     // Spiral mode needs long life for multiple orbits + sink; minimum enforced here even if caller passes a shorter maxLife.
@@ -904,7 +1131,11 @@ class Tomahawk {
     const h = window.innerHeight;
     const cx = w * 0.5;
     const travelYFrac =
-      typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number" ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC : 0.6;
+      typeof window !== "undefined" && typeof window.totemMasterLogCenterYFrac === "function"
+        ? window.totemMasterLogCenterYFrac()
+        : typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number"
+          ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC
+          : 0.78;
     const cy = h * travelYFrac;
     const dtSec = dtMs / 1000;
 
@@ -1046,7 +1277,7 @@ class Tomahawk {
     }
 
     // —— KW’ÉTL’EN (mode 3): slow spiral in → multiple inner orbits (smooth pursuit) → sink into totem
-    if (this.mode === MODE_ORCA_WISDOM) {
+    if (this.mode === MODE_ORCA_WISDOM && !this.orcaWaveMode && !this.ospreyDiveMode) {
       const vFlow =
         (typeof getVagusSnagVelocityMultiplier === "function" ? getVagusSnagVelocityMultiplier(nowMs) : 1) *
         (this.speedVar ?? 1) *
@@ -1458,6 +1689,31 @@ class Tomahawk {
       ctx.strokeStyle = energyHex;
       ctx.lineWidth = 1.45;
       ctx.stroke();
+    }
+
+    if (
+      lv === 3 &&
+      this.motorHand &&
+      typeof getForgeMotorTier === "function" &&
+      getForgeMotorTier() === 3
+    ) {
+      const ringCol = this.motorHand === "RIGHT" ? "rgba(239,68,68,0.9)" : "rgba(20,184,166,0.92)";
+      ctx.globalAlpha = fade * 0.92;
+      ctx.strokeStyle = ringCol;
+      ctx.lineWidth = 2.85;
+      ctx.beginPath();
+      ctx.arc(0, 0, s * 2.12, 0, TWO_PI);
+      ctx.stroke();
+      if (this.contraMirrorTap) {
+        ctx.globalAlpha = fade * 0.42;
+        ctx.setLineDash([5, 6]);
+        ctx.strokeStyle = this.motorHand === "RIGHT" ? "rgba(239,68,68,0.5)" : "rgba(20,184,166,0.52)";
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 2.42, 0, TWO_PI);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
 
     ctx.restore();

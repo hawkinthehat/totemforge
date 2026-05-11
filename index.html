@@ -7,7 +7,7 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>TotemForge Neural Suite v1.0</title>
+    <title>TotemForge Neural Suite v1.4.0</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Inter:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -47,6 +47,29 @@
         width: 100vw;
         height: 100vh;
         display: block;
+      }
+
+      /**
+       * KW’ÉKW’E Spirit Eye (final 10%): subtle silver/teal glow on the full canvas read —
+       * keyframes aligned to 12s Vagus (4s inhale / 8s exhale): swell through exhale, ease by inhale.
+       */
+      #gameCanvas.totem-spirit-eye-active {
+        animation: totemSpiritEyeShimmer 12s ease-in-out infinite;
+      }
+
+      @keyframes totemSpiritEyeShimmer {
+        0%,
+        28% {
+          filter: drop-shadow(0 0 3px rgba(226, 232, 240, 0.14));
+        }
+        42%,
+        88% {
+          filter: drop-shadow(0 0 14px rgba(248, 250, 252, 0.42)) drop-shadow(0 0 28px rgba(56, 189, 248, 0.18))
+            brightness(1.02);
+        }
+        100% {
+          filter: drop-shadow(0 0 3px rgba(226, 232, 240, 0.14));
+        }
       }
 
       .hud {
@@ -139,7 +162,8 @@
         border: 1px solid rgba(255, 255, 255, 0.12);
         background: rgba(255, 255, 255, 0.06);
         color: rgba(245, 247, 255, 0.9);
-        padding: 10px 12px;
+        padding: 8px 10px 9px;
+        min-height: 44px;
         border-radius: 12px;
         cursor: pointer;
         font-weight: 650;
@@ -168,6 +192,7 @@
         transform: translate(-50%, -50%);
         pointer-events: none;
         text-align: center;
+        white-space: pre-line;
         font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         letter-spacing: 0.22em;
         text-transform: uppercase;
@@ -181,6 +206,15 @@
         background: rgba(0, 0, 0, 0.08);
         border: 1px solid rgba(255, 255, 255, 0.06);
         backdrop-filter: blur(8px);
+      }
+
+      body[data-totem-phase="forge"] #pacer-label,
+      body[data-totem-phase="potlatch"] #pacer-label {
+        top: auto;
+        bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+        letter-spacing: 0.14em;
+        font-size: clamp(15px, 3.8vw, 20px);
+        max-width: min(92vw, 420px);
       }
 
       .hint {
@@ -452,31 +486,331 @@
       .salish-toast[hidden] {
         display: none !important;
       }
+
+      .mode-label-stack {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1px;
+        line-height: 1.15;
+      }
+
+      .mode-label-stack .mode-salish {
+        font-weight: 650;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+
+      .mode-label-stack .mode-phonetic {
+        font-size: 0.8em;
+        font-style: italic;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+        color: rgba(186, 230, 253, 0.72);
+        line-height: 1.2;
+      }
+
+      body[data-practice-mode="true"][data-totem-phase="forge"] {
+        background: radial-gradient(1000px 640px at 50% 28%, rgba(254, 243, 199, 0.14), transparent 52%),
+          radial-gradient(820px 600px at 18% 72%, rgba(253, 230, 138, 0.08), transparent 50%), var(--bg);
+      }
+
+      #gallery-practice-btn {
+        position: fixed;
+        right: calc(16px + env(safe-area-inset-right, 0px));
+        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        z-index: 93;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 16px;
+        border-radius: 14px;
+        border: 1px solid rgba(110, 231, 255, 0.42);
+        background: rgba(12, 18, 28, 0.88);
+        color: rgba(248, 250, 252, 0.95);
+        font-family: Inter, system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+        box-shadow: var(--shadow);
+        pointer-events: auto;
+      }
+
+      #gallery-practice-btn .gallery-practice-phonetic {
+        display: block;
+        font-size: 0.72em;
+        font-style: italic;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: none;
+        color: rgba(186, 230, 253, 0.85);
+      }
+
+      body[data-totem-phase="gallery"] #gallery-practice-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        text-align: right;
+      }
+
+      body[data-totem-phase="gallery"][data-totem-run-complete="true"] #gallery-practice-btn {
+        display: none;
+      }
+
+      body[data-practice-mode="true"] .topbar .modes {
+        opacity: 0.22;
+        pointer-events: none;
+      }
+
+      #practice-motor-panel {
+        position: fixed;
+        left: 50%;
+        bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+        transform: translateX(-50%);
+        z-index: 94;
+        display: none;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: rgba(12, 18, 28, 0.88);
+        border: 1px solid rgba(110, 231, 255, 0.28);
+        box-shadow: var(--shadow);
+        pointer-events: auto;
+      }
+
+      body[data-totem-phase="forge"][data-practice-mode="true"] #practice-motor-panel {
+        display: flex;
+      }
+
+      .practice-motor-btn {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(245, 247, 255, 0.9);
+        padding: 8px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 650;
+        font-size: 11px;
+        letter-spacing: 0.02em;
+        white-space: nowrap;
+      }
+
+      .practice-motor-btn[aria-pressed="true"] {
+        border-color: rgba(110, 231, 255, 0.65);
+        background: rgba(110, 231, 255, 0.16);
+      }
+
+      .mentor-welcome-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 92;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding: 24px 18px calc(32px + env(safe-area-inset-bottom, 0px));
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.45s ease;
+      }
+
+      .mentor-welcome-overlay[hidden] {
+        display: none !important;
+      }
+
+      .mentor-welcome-overlay--visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .mentor-welcome-parchment {
+        max-width: min(420px, calc(100vw - 32px));
+        padding: 22px 24px 20px;
+        border-radius: 4px 4px 12px 12px;
+        background: linear-gradient(165deg, rgba(254, 243, 199, 0.97) 0%, rgba(253, 230, 138, 0.94) 45%, rgba(251, 191, 36, 0.22) 100%);
+        border: 1px solid rgba(120, 53, 15, 0.35);
+        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+        color: #292524;
+        font-family: "Cormorant Garamond", Georgia, serif;
+        text-align: center;
+        pointer-events: auto;
+      }
+
+      .mentor-welcome-parchment h3 {
+        margin: 0 0 12px;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: #1c1917;
+      }
+
+      .mentor-welcome-parchment p {
+        margin: 0 0 14px;
+        font-size: 16px;
+        line-height: 1.5;
+        font-weight: 600;
+      }
+
+      .mentor-welcome-parchment .mentor-phonetic-list {
+        margin: 0 0 16px;
+        padding: 0;
+        list-style: none;
+        font-size: 14px;
+        line-height: 1.45;
+        font-weight: 600;
+        color: #44403c;
+        font-family: Inter, system-ui, sans-serif;
+      }
+
+      .mentor-welcome-parchment .mentor-phonetic-list em,
+      .mentor-welcome-parchment .mentor-inline-phonetic {
+        font-style: italic;
+        font-weight: 600;
+        font-size: 0.88em;
+        color: #57534e;
+      }
+
+      .mentor-welcome-parchment .mentor-continue {
+        appearance: none;
+        width: 100%;
+        border: 1px solid rgba(120, 53, 15, 0.45);
+        background: rgba(254, 243, 199, 0.5);
+        color: #1c1917;
+        padding: 12px 14px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-family: Inter, system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 14px;
+      }
+
+      .mentor-welcome-parchment .mentor-continue:hover {
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      #potlatch-completion-dialogue {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(0.98);
+        z-index: 99;
+        max-width: min(440px, calc(100vw - 28px));
+        padding: 22px 24px;
+        border-radius: 16px;
+        background: rgba(8, 12, 20, 0.92);
+        border: 1px solid rgba(45, 212, 191, 0.45);
+        box-shadow: var(--shadow);
+        color: #f8fafc;
+        font-family: "Cormorant Garamond", Georgia, serif;
+        font-size: 19px;
+        font-weight: 600;
+        line-height: 1.5;
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.5s ease, transform 0.5s ease;
+      }
+
+      #potlatch-completion-dialogue.potlatch-completion-dialogue--visible {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+        pointer-events: auto;
+      }
+
+      #potlatch-completion-dialogue[hidden] {
+        display: none !important;
+      }
     </style>
   </head>
   <body>
     <canvas id="gameCanvas"></canvas>
 
+    <button
+      type="button"
+      id="gallery-practice-btn"
+      aria-label="Practice Workshop: light cedar preview, no saving, motor skill drills"
+    >
+      Practice
+      <span class="gallery-practice-phonetic">Workshop · no Potlatch</span>
+    </button>
+
+    <div
+      id="mentor-welcome-overlay"
+      class="mentor-welcome-overlay"
+      hidden
+      aria-hidden="true"
+      role="dialog"
+      aria-labelledby="mentor-welcome-heading"
+      aria-modal="true"
+    >
+      <div class="mentor-welcome-parchment">
+        <h3 id="mentor-welcome-heading">Welcome to the Forge</h3>
+        <p>
+          Your journey begins with <strong>ST’ÉXEM</strong>
+          <em class="mentor-inline-phonetic">(stuh-ay-khuhm)</em> — Salmon at the base of the pole. Touch the base tier to start carving.
+        </p>
+        <ul class="mentor-phonetic-list">
+          <li><strong>SXT’EKW</strong> <em>(suh-kh-t-ay-kw)</em> — Neural weaver</li>
+          <li><strong>KW’ÉTL’EN</strong> <em>(kw-et-lun)</em> — Orca</li>
+          <li><strong>KW’ÉKW’E</strong> <em>(kwa-kwa)</em> — Osprey</li>
+        </ul>
+        <button type="button" id="mentor-welcome-continue" class="mentor-continue">Continue</button>
+      </div>
+    </div>
+
+    <div id="practice-motor-panel" aria-label="Practice motor skills">
+      <span style="font: 600 10px Inter, system-ui, sans-serif; color: rgba(148, 163, 184, 0.95); margin-right: 4px">Practice</span>
+      <button type="button" class="practice-motor-btn" data-practice-tier="1" aria-pressed="true">Standard</button>
+      <button type="button" class="practice-motor-btn" data-practice-tier="2" aria-pressed="false">Bilateral</button>
+      <button type="button" class="practice-motor-btn" data-practice-tier="3" aria-pressed="false">Contralateral</button>
+    </div>
+
+    <div
+      id="potlatch-completion-dialogue"
+      hidden
+      aria-live="polite"
+      aria-hidden="true"
+      role="status"
+    >
+      The spirit is wrapped. You are grounded. Return when the mind needs more light.
+    </div>
+
     <div class="hud" aria-hidden="false">
       <div class="topbar">
         <div class="brand">
           <strong>TotemForge</strong>
-          <span>v1.0 • Neural Suite • Vagus breath • Click to cast</span>
+          <span>Longhouse • Forge • Potlatch • Vagus breath — v1.1</span>
         </div>
 
         <div class="topbar-right">
           <div class="modes" role="group" aria-label="Remedy Modes">
-            <button id="mode-weaver" type="button" data-mode="0" aria-pressed="true" title="SXT’EKW — Horizontal EMDR">
-              SXT’EKW
+            <button id="mode-weaver" type="button" data-mode="0" aria-pressed="true" title="SXT’EKW (suh-kh-t-ay-kw) — Horizontal EMDR">
+              <span class="mode-label-stack">
+                <span class="mode-salish">SXT’EKW</span>
+                <span class="mode-phonetic">(suh-kh-t-ay-kw)</span>
+              </span>
             </button>
-            <button id="mode-osprey" type="button" data-mode="1" aria-pressed="false" title="KW’ÉKW’E — Saccadic grid">
-              KW’ÉKW’E
+            <button id="mode-osprey" type="button" data-mode="1" aria-pressed="false" title="KW’ÉKW’E (kwa-kwa) — Saccadic grid">
+              <span class="mode-label-stack">
+                <span class="mode-salish">KW’ÉKW’E</span>
+                <span class="mode-phonetic">(kwa-kwa)</span>
+              </span>
             </button>
-            <button id="mode-salmon" type="button" data-mode="2" aria-pressed="false" title="ST’ÉXEM — Salmon Run (Vertical vent)">
-              ST’ÉXEM
+            <button id="mode-salmon" type="button" data-mode="2" aria-pressed="false" title="ST’ÉXEM (stuh-ay-khuhm) — Salmon Run (Vertical vent)">
+              <span class="mode-label-stack">
+                <span class="mode-salish">ST’ÉXEM</span>
+                <span class="mode-phonetic">(stuh-ay-khuhm)</span>
+              </span>
             </button>
-            <button id="mode-orca" type="button" data-mode="3" aria-pressed="false" title="KW’ÉTL’EN — Orbiting / spiral">
-              KW’ÉTL’EN
+            <button id="mode-orca" type="button" data-mode="3" aria-pressed="false" title="KW’ÉTL’EN (kw-et-lun) — Orbiting / spiral">
+              <span class="mode-label-stack">
+                <span class="mode-salish">KW’ÉTL’EN</span>
+                <span class="mode-phonetic">(kw-et-lun)</span>
+              </span>
             </button>
           </div>
           <button
@@ -492,8 +826,8 @@
       <div id="pacer-label">Inhale</div>
 
       <div class="hint">
-        <span class="kbd">Click</span> to cast. <span class="kbd">ST’ÉXEM</span>: top-half snag → left screen; bottom-half → right.
-        After the crown tier completes, press <span class="kbd">Esc</span> to reset.
+        <span class="kbd">Longhouse:</span> tap a cedar block to enter the Forge and carve. Use <span class="kbd">Practice</span> for a yellow-cedar workshop (no saving, no Potlatch). Phonetics under each Salish name stay visible in the bar above.
+        <span class="kbd">Forge:</span> shatter snags; at 100% the Potlatch wraps the animal onto the pole. <span class="kbd">Esc</span> resets (forge) or exits Practice to the Longhouse.
       </div>
     </div>
 

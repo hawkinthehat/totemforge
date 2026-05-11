@@ -64,12 +64,25 @@ const MASTER_LOG_WIDTH_PX = 240;
 const MASTER_LOG_HEIGHT_FRAC = 0.7;
 const MASTER_LOG_SCALE_X_MIN = 0.94;
 const MASTER_LOG_SCALE_X_MAX = 1.06;
-const MASTER_LOG_FILL = "#5c4033";
-const MASTER_LOG_GRAIN_COLOR = "#451a03";
+/** Cedar plank vertical gradient (dark → warm lift). */
+const MASTER_LOG_CEDAR_TOP = "#3e2723";
+const MASTER_LOG_CEDAR_BOT = "#5d4037";
 
 /**
- * High-performance Master Log: single fillRect + a few grain strokes.
- * Vagus “breath” = horizontal scale only (no geometry rebuild).
+ * Screen Y fraction of Master Log center — matches live layout when `totemLayout` is set (snag aim fallback in config).
+ */
+function totemMasterLogCenterYFrac() {
+  const winH = typeof window !== "undefined" ? window.innerHeight || 1 : 1;
+  if (totemLayout?.masterLogCy != null && typeof totemLayout.h === "number" && totemLayout.h > 0) {
+    return totemLayout.masterLogCy / totemLayout.h;
+  }
+  return typeof CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC === "number" ? CEDAR_SNAG_TRAVEL_TARGET_Y_FRAC : 0.78;
+}
+
+if (typeof window !== "undefined") window.totemMasterLogCenterYFrac = totemMasterLogCenterYFrac;
+
+/**
+ * High-performance Master Log: cedar gradient, vertical grain, drop shadow; breath = horizontal scale only.
  */
 function drawMasterTotemLog(ctx2, w, h, breath01, nowMs = performance.now()) {
   if (!ctx2) return;
@@ -82,39 +95,94 @@ function drawMasterTotemLog(ctx2, w, h, breath01, nowMs = performance.now()) {
     } catch (_) {}
   }
   const cx = w * 0.5;
-  const cy = viewH * 0.6;
   const logH = viewH * MASTER_LOG_HEIGHT_FRAC;
+  const cy =
+    totemLayout?.masterLogCy != null
+      ? totemLayout.masterLogCy * (viewH / Math.max(1, totemLayout.h || viewH))
+      : viewH * totemMasterLogCenterYFrac();
   const logW = MASTER_LOG_WIDTH_PX;
   const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
   const amp = ease(typeof breath01 === "number" ? breath01 : 0);
   const scaleX = MASTER_LOG_SCALE_X_MIN + (MASTER_LOG_SCALE_X_MAX - MASTER_LOG_SCALE_X_MIN) * amp;
 
+  const left = cx - logW * 0.5;
+  const top = cy - logH * 0.5;
+  const rad = 10;
+
   ctx2.save();
-  ctx2.globalAlpha = 0.8;
   ctx2.translate(cx, cy);
   ctx2.scale(scaleX, 1);
   ctx2.translate(-cx, -cy);
 
-  ctx2.fillStyle = MASTER_LOG_FILL;
-  ctx2.fillRect(cx - logW * 0.5, cy - logH * 0.5, logW, logH);
+  ctx2.shadowColor = "rgba(0,0,0,0.5)";
+  ctx2.shadowBlur = 36;
+  ctx2.shadowOffsetY = 16;
+  ctx2.shadowOffsetX = 0;
 
-  ctx2.strokeStyle = MASTER_LOG_GRAIN_COLOR;
-  ctx2.lineWidth = 1;
-  ctx2.lineCap = "butt";
-  const grainCount = 6;
-  const marginX = 14;
-  const x0 = cx - logW * 0.5 + marginX;
-  const x1 = cx + logW * 0.5 - marginX;
+  const practiceLog =
+    typeof totemPracticeMode !== "undefined" && totemPracticeMode;
+  const logTop = practiceLog ? "#fef3c7" : MASTER_LOG_CEDAR_TOP;
+  const logBot = practiceLog ? "#fde68a" : MASTER_LOG_CEDAR_BOT;
+
+  const grad = ctx2.createLinearGradient(cx, top, cx, top + logH);
+  grad.addColorStop(0, logTop);
+  grad.addColorStop(1, logBot);
+  ctx2.fillStyle = grad;
+  ctx2.globalAlpha = 0.92;
+  ctx2.beginPath();
+  if (typeof ctx2.roundRect === "function") {
+    ctx2.roundRect(left, top, logW, logH, rad);
+  } else {
+    ctx2.moveTo(left + rad, top);
+    ctx2.lineTo(left + logW - rad, top);
+    ctx2.quadraticCurveTo(left + logW, top, left + logW, top + rad);
+    ctx2.lineTo(left + logW, top + logH - rad);
+    ctx2.quadraticCurveTo(left + logW, top + logH, left + logW - rad, top + logH);
+    ctx2.lineTo(left + rad, top + logH);
+    ctx2.quadraticCurveTo(left, top + logH, left, top + logH - rad);
+    ctx2.lineTo(left, top + rad);
+    ctx2.quadraticCurveTo(left, top, left + rad, top);
+    ctx2.closePath();
+  }
+  ctx2.fill();
+
+  ctx2.shadowColor = "transparent";
+  ctx2.shadowBlur = 0;
+  ctx2.shadowOffsetY = 0;
+
+  const grainCount = 13;
+  const marginX = 12;
+  const x0 = left + marginX;
+  const x1 = left + logW - marginX;
   const span = Math.max(1, x1 - x0);
-  const yTop = cy - logH * 0.5 + 6;
-  const yBot = cy + logH * 0.5 - 6;
+  const yTop = top + 8;
+  const yBot = top + logH - 8;
+  ctx2.lineCap = "butt";
   for (let i = 0; i < grainCount; i++) {
-    const gx = x0 + (span * (i + 1)) / (grainCount + 1);
+    const t = (i + 1) / (grainCount + 1);
+    const gx = x0 + span * t;
+    const jitter = Math.sin(i * 9.17 + 2.3) * 0.65;
+    const gxJ = gx + jitter;
+    const a = 0.08 + (i % 3) * 0.028;
+    const grainRgb = practiceLog ? "120, 90, 40" : "28, 18, 14";
+    ctx2.strokeStyle = `rgba(${grainRgb}, ${a})`;
+    ctx2.lineWidth = i % 4 === 0 ? 1.15 : 0.75;
     ctx2.beginPath();
-    ctx2.moveTo(gx, yTop);
-    ctx2.lineTo(gx, yBot);
+    ctx2.moveTo(gxJ, yTop);
+    ctx2.lineTo(gxJ + Math.sin(i * 1.7) * 0.4, yBot);
     ctx2.stroke();
   }
+  ctx2.strokeStyle = practiceLog ? "rgba(161, 98, 7, 0.16)" : "rgba(93, 64, 55, 0.14)";
+  ctx2.lineWidth = 1;
+  for (let r = 0; r < 3; r++) {
+    const yy = top + logH * (0.22 + r * 0.28);
+    ctx2.beginPath();
+    ctx2.moveTo(left + 18, yy);
+    ctx2.quadraticCurveTo(cx, yy + (r - 1) * 2.5, left + logW - 18, yy + 1);
+    ctx2.stroke();
+  }
+
+  ctx2.globalAlpha = 1;
 
   const flashUntil =
     typeof totemLogOutlineFlashUntilMs === "number" ? totemLogOutlineFlashUntilMs : 0;
@@ -148,6 +216,187 @@ function drawMasterTotemLog(ctx2, w, h, breath01, nowMs = performance.now()) {
   ctx2.restore();
 }
 
+/** Live snag: not expired (`isDead`), valid position. */
+function totemCedarSnagIsActive(t) {
+  if (!t || t.isDead) return false;
+  if (!Number.isFinite(t.x) || !Number.isFinite(t.y)) return false;
+  return true;
+}
+
+/**
+ * Nearest active Cedar Snag in CSS px (Spirit Eye / KW’ÉKW’E).
+ * When forging the apex tier, only snags tagged for tier 3 are considered so stray lower-tier echoes are ignored.
+ */
+function totemNearestSnagToPoint(px, py) {
+  if (typeof tomahawks === "undefined" || !Array.isArray(tomahawks) || tomahawks.length === 0) return null;
+  const apexOnly =
+    typeof forgeTargetLevel === "number" &&
+    forgeTargetLevel === 3 &&
+    typeof getForgeMotorTier === "function" &&
+    getForgeMotorTier() === 3 &&
+    typeof normalizeSnagTotemLevel === "function";
+  let best = null;
+  let bestD = Infinity;
+  for (let i = 0; i < tomahawks.length; i++) {
+    const t = tomahawks[i];
+    if (!totemCedarSnagIsActive(t)) continue;
+    if (apexOnly && normalizeSnagTotemLevel(t.snagTotemLevel) !== 3) continue;
+    const dx = t.x - px;
+    const dy = t.y - py;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = t;
+    }
+  }
+  if (best) return best;
+  if (!apexOnly) return null;
+  for (let j = 0; j < tomahawks.length; j++) {
+    const t2 = tomahawks[j];
+    if (!totemCedarSnagIsActive(t2)) continue;
+    const dx = t2.x - px;
+    const dy = t2.y - py;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = t2;
+    }
+  }
+  return best;
+}
+
+/** Faint silver silhouette of the active Salish tier on the cedar plank (ghost before carve reads). */
+function drawTotemAnimalGhostOutline(ctx2, L, breath01, viewCamY = 0) {
+  if (!ctx2 || !L || typeof totemLevel !== "number") return;
+  const lv =
+    typeof totemAppPhase === "string" &&
+    typeof TOTEM_PHASE_FORGE !== "undefined" &&
+    totemAppPhase === TOTEM_PHASE_FORGE &&
+    typeof forgeTargetLevel === "number"
+      ? forgeTargetLevel
+      : totemLevel;
+  const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
+  const amp = ease(typeof breath01 === "number" ? breath01 : 0);
+  const S = L.S;
+  const cx = L.cx;
+  const salmonStackY = L.salmonStackY;
+  const orcaStackY = L.orcaStackY;
+  const ospreyStackY = L.ospreyStackY;
+
+  const forgeEmphasis =
+    typeof totemAppPhase === "string" &&
+    typeof TOTEM_PHASE_FORGE !== "undefined" &&
+    totemAppPhase === TOTEM_PHASE_FORGE;
+
+  ctx2.save();
+  const silAlpha = (forgeEmphasis ? 0.22 : 0.1) + (forgeEmphasis ? 0.12 : 0.07) * amp;
+  ctx2.strokeStyle = `rgba(226, 232, 240, ${silAlpha})`;
+  ctx2.fillStyle = `rgba(226, 232, 240, ${silAlpha * 0.35})`;
+  ctx2.lineWidth = Math.max(forgeEmphasis ? 2.4 : 1.15, S * (forgeEmphasis ? 0.028 : 0.016));
+  ctx2.lineJoin = "round";
+
+  if (lv === 1) {
+    const swell = 0.92 + 0.18 * L.amp;
+    const s = S * swell;
+    const fishCx = cx;
+    const fishCy = salmonStackY - s * 0.06;
+    ctx2.beginPath();
+    ctx2.ellipse(fishCx, fishCy, s * 0.52, s * 0.21, 0, 0, TWO_PI);
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.ellipse(fishCx + s * 0.33, fishCy - s * 0.06, s * 0.12, s * 0.08, 0, 0, TWO_PI);
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.moveTo(fishCx - s * 0.55, fishCy + s * 0.04);
+    ctx2.quadraticCurveTo(fishCx - s * 0.7, fishCy + s * 0.1, fishCx - s * 0.6, fishCy + s * 0.16);
+    ctx2.stroke();
+  } else if (lv === 2) {
+    const swell = 0.93 + 0.17 * L.amp;
+    const s = S * swell * 1.08;
+    const ocCx = cx;
+    const ocCy = orcaStackY;
+    const img =
+      typeof window !== "undefined" && window.totemTripleOrcaGhostImg && window.totemTripleOrcaGhostImg.complete
+        ? window.totemTripleOrcaGhostImg
+        : null;
+    if (img && img.naturalWidth > 0) {
+      const dw = s * 1.62;
+      const dh = s * 1.08;
+      ctx2.globalAlpha = Math.min(0.95, silAlpha * 3.2);
+      ctx2.drawImage(img, ocCx - dw * 0.5, ocCy - dh * 0.5, dw, dh);
+    } else {
+      const bodyRx = s * 0.58;
+      const bodyRy = s * 0.28;
+      const drawRing = (rx, ry) => {
+        ctx2.beginPath();
+        ctx2.ellipse(ocCx, ocCy, rx, ry, 0, 0, TWO_PI);
+        ctx2.stroke();
+      };
+      drawRing(bodyRx, bodyRy);
+      drawRing(bodyRx * 0.62, bodyRy * 0.62);
+      drawRing(bodyRx * 0.34, bodyRy * 0.34);
+      const dCx = ocCx - s * 0.02;
+      const dCy = ocCy - s * 0.48;
+      const dR = s * 0.78;
+      ctx2.beginPath();
+      ctx2.arc(dCx, dCy, dR, Math.PI * 1.18, Math.PI * 1.18 + Math.PI * 0.62);
+      ctx2.stroke();
+    }
+  } else {
+    const swell = 0.9 + 0.2 * L.amp;
+    const s = S * swell * 0.92;
+    const birdCx = cx;
+    const birdCy = ospreyStackY;
+    const eyeCy = birdCy - s * 0.055;
+    const eyeDx = s * 0.15;
+    const erx = s * 0.11;
+    const ery = s * 0.078;
+    const spiritFrac =
+      typeof TOTEM_SPIRIT_EYE_FILL_FRAC === "number" ? TOTEM_SPIRIT_EYE_FILL_FRAC : 0.9;
+    const spiritEye =
+      forgeEmphasis &&
+      typeof forgeTargetLevel === "number" &&
+      forgeTargetLevel === 3 &&
+      typeof totemTierFillRatio === "function" &&
+      totemTierFillRatio(3) >= spiritFrac;
+
+    ctx2.beginPath();
+    ctx2.ellipse(birdCx, birdCy, s * 0.2, s * 0.11, 0, 0, TWO_PI);
+    ctx2.stroke();
+    for (const side of [-1, 1]) {
+      ctx2.beginPath();
+      ctx2.ellipse(birdCx + side * s * 0.56, birdCy + s * 0.02, s * 0.58, s * 0.22, side * 0.12, 0, TWO_PI);
+      ctx2.stroke();
+    }
+
+    for (const side of [-1, 1]) {
+      const eyeCx = birdCx + side * eyeDx;
+      let eyeRot = 0;
+      if (spiritEye) {
+        const snag = totemNearestSnagToPoint(eyeCx, eyeCy + viewCamY);
+        if (snag) {
+          eyeRot = Math.atan2(snag.y - (eyeCy + viewCamY), snag.x - eyeCx);
+        }
+      }
+      ctx2.save();
+      ctx2.translate(eyeCx, eyeCy);
+      ctx2.rotate(eyeRot);
+      ctx2.beginPath();
+      ctx2.ellipse(0, 0, erx, ery, 0, 0, TWO_PI);
+      ctx2.stroke();
+      if (spiritEye) {
+        ctx2.globalAlpha = Math.min(0.95, silAlpha * 2.8);
+        ctx2.fillStyle = `rgba(248, 250, 252, ${silAlpha * 0.5})`;
+        ctx2.beginPath();
+        ctx2.ellipse(side * erx * 0.22, 0, erx * 0.12, ery * 0.35, 0, 0, TWO_PI);
+        ctx2.fill();
+      }
+      ctx2.restore();
+    }
+  }
+  ctx2.restore();
+}
+
 function computeTotemLayout(w, h) {
   const ease = (x) => 0.5 - 0.5 * Math.cos(Math.PI * Math.max(0, Math.min(1, x)));
   const amp = ease(0.5);
@@ -155,11 +404,17 @@ function computeTotemLayout(w, h) {
   const baseScale = base * 0.28;
   const scaleMultiplier = 0.88 + 0.22 * amp;
   const S = baseScale * scaleMultiplier;
-  const poleFootY = h * 0.965;
+  const poleFootY = h * 0.993;
   const blockH = S * 2.32;
-  const salmonStackY = poleFootY - blockH * 0.42;
+  const groundY =
+    typeof TOTEM_MOBILE_GROUND_OFFSET_FRAC === "number" ? h * TOTEM_MOBILE_GROUND_OFFSET_FRAC : 0;
+  /** Tight to the virtual foot so the Salmon base sits low — pole reads as rising from the hand. */
+  const salmonStackY = poleFootY - blockH * 0.11 + groundY;
   const orcaStackY = salmonStackY - blockH;
   const ospreyStackY = orcaStackY - blockH;
+  const logH = h * MASTER_LOG_HEIGHT_FRAC;
+  const logBottom = Math.min(h * 0.991, poleFootY + blockH * 0.05) + groundY * 0.35;
+  const masterLogCy = logBottom - logH * 0.5;
   return {
     w,
     h,
@@ -172,11 +427,15 @@ function computeTotemLayout(w, h) {
     salmonStackY,
     orcaStackY,
     ospreyStackY,
+    masterLogCy,
+    logH,
   };
 }
 
 function capTotemLevelPoints(level, arr) {
-  const maxN = TOTEM_MAX_POINTS_PER_ANIMAL;
+  let maxN = TOTEM_MAX_POINTS_PER_ANIMAL;
+  if (level === 2 && typeof TOTEM_ORCA_MAX_TRIGGER_POINTS === "number") maxN = TOTEM_ORCA_MAX_TRIGGER_POINTS;
+  if (level === 3 && typeof TOTEM_OSPREY_MAX_TRIGGER_POINTS === "number") maxN = TOTEM_OSPREY_MAX_TRIGGER_POINTS;
   if (!arr || arr.length <= maxN) return arr;
   const step = arr.length / maxN;
   const out = [];
@@ -242,6 +501,18 @@ function syncTotemPointActiveFlags() {
   else totemPoints = ptsByLevel[3] ?? ptsByLevel[2] ?? salmonPts;
 }
 
+function _totemMixHex(a, b, t) {
+  const u = Math.max(0, Math.min(1, t));
+  const p = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  const A = p(a);
+  const B = p(b);
+  const L = (i) =>
+    Math.max(0, Math.min(255, Math.round(A[i] + (B[i] - A[i]) * u)))
+      .toString(16)
+      .padStart(2, "0");
+  return `#${L(0)}${L(1)}${L(2)}`;
+}
+
 /** Offscreen totem cache: rgba in fillStyle only (no per-dot ctx.globalAlpha churn). */
 function paintTotemDotToCache(
   c,
@@ -258,7 +529,6 @@ function paintTotemDotToCache(
   emdrSalmonGhost,
   dotIndex = -1
 ) {
-  const fo = p.fillOrder ?? 0;
   const marking = p.marking;
   const sec = p.paintSection ?? marking;
   const secPaint = typeof getTotemSectionPaint === "function" ? getTotemSectionPaint(level, sec) : 0;
@@ -276,9 +546,17 @@ function paintTotemDotToCache(
     marking === "talon" ||
     marking === "wing" ||
     marking === "beak" ||
-    marking === "blowhole";
+    marking === "blowhole" ||
+    marking === "ring" ||
+    marking === "ringBridge" ||
+    marking === "triggerZone" ||
+    marking === "wingtip";
 
-  const ghostRgb = "170, 182, 195";
+  const forgeSilverGhost =
+    typeof totemAppPhase === "string" &&
+    typeof TOTEM_PHASE_FORGE !== "undefined" &&
+    totemAppPhase === TOTEM_PHASE_FORGE;
+  const ghostRgb = forgeSilverGhost ? "226, 232, 240" : "170, 182, 195";
 
   if (!on && carveStrength < 0.02) {
     const ga = tierRev * emMul * (rimLike ? 0.17 : 0.11) * emdrSalmonGhost;
@@ -296,10 +574,43 @@ function paintTotemDotToCache(
   c.arc(px, py, baseR * (rimLike ? 1.02 : 0.94), 0, TWO_PI);
   c.fill();
 
-  const carveDeep = "#3f1810";
-  const carveMid = "#7f1d1d";
-  const carveLift = "#dc2626";
-  const carveSheen = "#fde68a";
+  let carveDeep = "#0c0a09";
+  let carveMid = "#991b1b";
+  let liftRgb = "185, 28, 28";
+  let rimStrokeDeep = "12, 10, 9";
+  let rimStrokeLift = "220, 38, 38";
+  let ospreyFinaleGlow = false;
+
+  if (level === 3 && typeof totemTierFillRatio === "function") {
+    const fr = totemTierFillRatio(3);
+    const CR = "#991b1b";
+    const TL = "#14b8a6";
+    const TL_D = "#0f766e";
+    const TL_HI = "#5eead4";
+    if (fr < 0.4) {
+      carveMid = CR;
+      carveDeep = "#1a0909";
+      liftRgb = "185, 28, 28";
+    } else if (fr < 0.9) {
+      const k = 0.5 - 0.5 * Math.cos((Math.PI * (fr - 0.4)) / 0.5);
+      carveMid = _totemMixHex(CR, TL, k);
+      carveDeep = _totemMixHex("#2a0a0a", TL_D, k);
+      const lr = Math.round(185 + (45 - 185) * k);
+      const lg = Math.round(28 + (212 - 28) * k);
+      const lb = Math.round(28 + (184 - 28) * k);
+      liftRgb = `${lr}, ${lg}, ${lb}`;
+      rimStrokeLift = `${Math.round(220 - 40 * k)}, ${Math.round(38 + 180 * k)}, ${Math.round(38 + 170 * k)}`;
+    } else {
+      const k = (fr - 0.9) / 0.1;
+      const e = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, k)));
+      carveMid = _totemMixHex(TL, "#e2e8f0", e * 0.45);
+      carveDeep = _totemMixHex(TL_D, "#0c4a44", e * 0.35);
+      liftRgb = `${Math.round(20 + 235 * e)}, ${Math.round(184 + 68 * e)}, ${Math.round(166 + 86 * e)}`;
+      rimStrokeDeep = `${Math.round(12 + 200 * e)}, ${Math.round(10 + 230 * e)}, ${Math.round(9 + 240 * e)}`;
+      rimStrokeLift = `${Math.round(94 + 160 * e)}, ${Math.round(234 + 20 * e)}, ${Math.round(212 + 40 * e)}`;
+      ospreyFinaleGlow = fr >= 0.9 && (marking === "eye" || marking === "wingtip");
+    }
+  }
 
   c.fillStyle = carveDeep;
   c.beginPath();
@@ -310,15 +621,32 @@ function paintTotemDotToCache(
   c.arc(px - baseR * 0.03, py - baseR * 0.02, baseR * 0.8, 0, TWO_PI);
   c.fill();
   const liftA = pa * (0.82 + glow * 0.18);
-  c.fillStyle = `rgba(220, 38, 38, ${liftA})`;
+  c.fillStyle = `rgba(${liftRgb}, ${liftA})`;
   c.beginPath();
   c.arc(px - baseR * 0.2, py - baseR * 0.17, baseR * (rimLike ? 0.46 : 0.34), 0, TWO_PI);
   c.fill();
   if (rimLike) {
-    c.strokeStyle = `rgba(253, 230, 138, ${pa * 0.92})`;
-    c.lineWidth = Math.max(0.5, baseR * 0.2);
+    c.strokeStyle = `rgba(${rimStrokeDeep}, ${pa * 0.94})`;
+    c.lineWidth = Math.max(0.65, baseR * 0.22);
     c.beginPath();
-    c.arc(px, py, baseR * 0.58, 0.55, TWO_PI - 0.55);
+    c.arc(px, py, baseR * 0.58, 0.52, TWO_PI - 0.52);
+    c.stroke();
+    c.strokeStyle = `rgba(${rimStrokeLift}, ${pa * 0.42})`;
+    c.lineWidth = Math.max(0.35, baseR * 0.1);
+    c.beginPath();
+    c.arc(px - baseR * 0.06, py - baseR * 0.05, baseR * 0.42, 0.65, TWO_PI - 0.65);
+    c.stroke();
+  }
+  if (level === 3 && ospreyFinaleGlow && on) {
+    c.strokeStyle = `rgba(248, 250, 252, ${pa * 0.88})`;
+    c.lineWidth = Math.max(0.5, baseR * 0.16);
+    c.beginPath();
+    c.arc(px + baseR * 0.02, py - baseR * 0.06, baseR * 0.52, 0.45, TWO_PI - 0.45);
+    c.stroke();
+    c.strokeStyle = `rgba(226, 232, 240, ${pa * 0.55})`;
+    c.lineWidth = Math.max(0.35, baseR * 0.09);
+    c.beginPath();
+    c.arc(px - baseR * 0.12, py + baseR * 0.04, baseR * 0.28, 0.2, TWO_PI - 0.2);
     c.stroke();
   }
 }
@@ -666,110 +994,191 @@ function generateTotem(nowMs) {
     return a;
   }
 
-  /** Level 3 Osprey: dense clusters for eye, wing arcs, and talon hooks (formline fill). */
+  /**
+   * Level 3 KW’ÉKW’E (Osprey) Master Finale mesh: Salish-forward silhouette, dense stacked U
+   * trigger zones on wings + tail for granular harvest (capped via TOTEM_OSPREY_MAX_TRIGGER_POINTS).
+   */
   function drawOsprey(offsetY = 0) {
     const a = [];
     const idxRef = { i: 0 };
     const anchorY = ospreyStackY + offsetY;
     const swell = 0.9 + 0.2 * amp;
-    const s = S * swell * 0.92;
+    const s = S * swell * 0.94;
     const birdCx = cx;
     const birdCy = anchorY;
     const pulseMul = 0.94 + ((scaleMultiplier - 0.88) / 0.22) * 0.1;
 
     const insideWing = (px, py, side) => {
-      const wx = birdCx + side * s * 0.48;
+      const wx = birdCx + side * s * 0.5;
       const wy = birdCy + s * 0.02;
-      const dx = (px - wx) / (s * 0.62);
-      const dy = (py - wy) / (s * 0.24);
-      return dx * dx + dy * dy <= 1.06;
+      const dx = (px - wx) / (s * 0.64);
+      const dy = (py - wy) / (s * 0.25);
+      return dx * dx + dy * dy <= 1.05;
     };
 
     const rhoO = Math.sqrt(5);
-    const wingStep = (s * 0.027) / rhoO;
+    const wingGrid = (s * 0.0165) / rhoO;
 
-    // Body core — thick solid almond band clusters
-    const bodySteps = 520;
+    const pushMiniU = (ux, uy, R, a0, span, markTip) => {
+      const steps = 22;
+      const radials = [1.0, 0.94, 0.87, 0.81, 0.74];
+      for (let k = 0; k < steps; k++) {
+        const u = steps <= 1 ? 0 : k / (steps - 1);
+        const ang = a0 + u * span;
+        const ox = Math.cos(ang);
+        const oy = Math.sin(ang);
+        for (let ri = 0; ri < radials.length; ri++) {
+          const rr = radials[ri];
+          const fo = ri === 0 ? 0 : 1;
+          const tip = markTip && ri === 0 && (k === 0 || k === steps - 1);
+          pushSalmonPoint(
+            a,
+            ux + ox * R * rr,
+            uy + oy * R * rr,
+            fo,
+            idxRef,
+            tip ? "wingtip" : "triggerZone",
+            birdCx,
+            birdCy,
+            pulseMul,
+            fo === 0 ? 1 : 2
+          );
+        }
+      }
+    };
+
+    const bodySteps = 560;
     for (let ti = 0; ti < bodySteps; ti++) {
       const theta = (ti / bodySteps) * TWO_PI;
-      const bx = birdCx + Math.cos(theta) * s * 0.2;
-      const by = birdCy + Math.sin(theta) * s * 0.11;
+      const bx = birdCx + Math.cos(theta) * s * 0.21;
+      const by = birdCy + Math.sin(theta) * s * 0.12;
       const vx = bx - birdCx;
       const vy = by - birdCy;
-      for (let rf = 0.74; rf <= 1.001; rf += 0.018) {
-        pushSalmonPoint(a, birdCx + vx * rf, birdCy + vy * rf, 1, idxRef, "body", birdCx, birdCy, pulseMul);
-      }
-    }
-
-    // Wing grids (left / right) — wide osprey wingspan
-    for (const side of [-1, 1]) {
-      const gw = s * 0.62;
-      const gh = s * 0.4;
-      let gx = birdCx + side * s * 0.1;
-      while ((side < 0 && gx > birdCx - s * 0.84) || (side > 0 && gx < birdCx + s * 0.84)) {
-        let gy = birdCy - gh * 0.45;
-        while (gy < birdCy + gh * 0.48) {
-          if (insideWing(gx, gy, side)) {
-            pushSalmonPoint(a, gx, gy, 1, idxRef, "wing", birdCx, birdCy, pulseMul);
-          }
-          gy += wingStep;
-        }
-        gx += side * wingStep * 0.95;
-      }
-    }
-
-    // Eye — solid ovoid cluster
-    const eyeCx = birdCx + s * 0.14;
-    const eyeCy = birdCy - s * 0.05;
-    const erx = s * 0.11;
-    const ery = s * 0.075;
-    const eyeSteps = 320;
-    for (let ei = 0; ei < eyeSteps; ei++) {
-      const a0 = (ei / eyeSteps) * TWO_PI;
-      for (let rr = 1.0; rr >= 0.58; rr -= 0.035) {
-        pushSalmonPoint(a, eyeCx + Math.cos(a0) * erx * rr, eyeCy + Math.sin(a0) * ery * rr, 0, idxRef, "eye", birdCx, birdCy, pulseMul);
-      }
-    }
-
-    // Beak — narrow hooked profile (sharp silhouette forward of the eye)
-    const beakCx = birdCx + s * 0.32;
-    const beakCy = birdCy - s * 0.025;
-    const beakSteps = 72;
-    for (let bi = 0; bi < beakSteps; bi++) {
-      const u = bi / Math.max(1, beakSteps - 1);
-      const bx = beakCx + u * s * 0.24;
-      const by = beakCy + (u * u * 0.28 - 0.12) * s * 0.2;
-      for (let shell = 0; shell < 5; shell++) {
-        const off = (shell - 2) * 0.009 * s;
+      for (let rf = 0.72; rf <= 1.001; rf += 0.016) {
         pushSalmonPoint(
           a,
-          bx,
-          by + off,
-          shell < 2 ? 0 : 1,
+          birdCx + vx * rf,
+          birdCy + vy * rf,
+          rf >= 0.97 ? 0 : 1,
           idxRef,
-          "beak",
+          "body",
           birdCx,
           birdCy,
           pulseMul,
-          1
+          rf >= 0.97 ? 1 : 2
         );
       }
     }
 
-    // Talon hooks (small U clusters)
+    for (const side of [-1, 1]) {
+      let gx = birdCx + side * s * 0.14;
+      const xEnd = side < 0 ? birdCx - s * 0.86 : birdCx + s * 0.86;
+      let col = 0;
+      while ((side < 0 && gx > xEnd) || (side > 0 && gx < xEnd)) {
+        let gy = birdCy - s * 0.38;
+        let row = 0;
+        while (gy < birdCy + s * 0.36) {
+          if (insideWing(gx, gy, side)) {
+            const distTip = Math.abs(gx - (birdCx + side * s * 0.82));
+            const isTipBand = distTip < s * 0.12;
+            const tilt = side * 0.11 * (1 - Math.abs(gy - birdCy) / (s * 0.42));
+            const R = s * (0.054 + ((col * 17 + row * 31) % 5) * 0.0024);
+            pushMiniU(gx, gy, R, Math.PI * 0.55 + tilt, Math.PI * 0.52, isTipBand);
+          }
+          gy += wingGrid * 0.92;
+          row++;
+        }
+        gx += side * wingGrid * 1.02;
+        col++;
+      }
+    }
+
+    for (const side of [-1, 1]) {
+      let gx = birdCx + side * s * 0.17;
+      const xEnd2 = side < 0 ? birdCx - s * 0.82 : birdCx + s * 0.82;
+      let col2 = 0;
+      while ((side < 0 && gx > xEnd2) || (side > 0 && gx < xEnd2)) {
+        let gy = birdCy - s * 0.35;
+        let row2 = 0;
+        while (gy < birdCy + s * 0.32) {
+          if (insideWing(gx, gy, side)) {
+            const distTip = Math.abs(gx - (birdCx + side * s * 0.82));
+            const isTipBand = distTip < s * 0.14;
+            const tilt = side * 0.08 * (1 - Math.abs(gy - birdCy) / (s * 0.44));
+            const R = s * (0.036 + ((col2 * 13 + row2 * 29) % 4) * 0.0022);
+            pushMiniU(gx, gy, R, Math.PI * 0.62 + tilt, Math.PI * 0.38, isTipBand);
+          }
+          gy += wingGrid * 0.88;
+          row2++;
+        }
+        gx += side * wingGrid * 0.52;
+        col2++;
+      }
+    }
+
+    for (let ti = 0; ti < 11; ti++) {
+      const u0 = ti / 10;
+      const tx = birdCx + (u0 - 0.5) * s * 0.22;
+      const ty = birdCy + s * 0.14 + u0 * s * 0.08;
+      const span = Math.PI * 0.42 + u0 * 0.18;
+      pushMiniU(tx, ty, s * (0.048 + u0 * 0.018), Math.PI * 0.52, span, ti === 0 || ti === 10);
+    }
+
+    for (let di = 0; di < 8; di++) {
+      const u = di / 7;
+      const sx = birdCx + (u - 0.5) * s * 0.08;
+      const sy = birdCy - s * (0.08 + u * 0.22);
+      pushMiniU(sx, sy, s * 0.06, Math.PI * 1.02, Math.PI * 0.55, false);
+    }
+
+    const eyeCx = birdCx + s * 0.15;
+    const eyeCy = birdCy - s * 0.055;
+    const erx = s * 0.12;
+    const ery = s * 0.082;
+    const eyeSteps = 380;
+    for (let ei = 0; ei < eyeSteps; ei++) {
+      const a0 = (ei / eyeSteps) * TWO_PI;
+      for (let rr = 1.0; rr >= 0.56; rr -= 0.028) {
+        pushSalmonPoint(a, eyeCx + Math.cos(a0) * erx * rr, eyeCy + Math.sin(a0) * ery * rr, 0, idxRef, "eye", birdCx, birdCy, pulseMul, 0);
+      }
+    }
+
+    const beakCx = birdCx + s * 0.34;
+    const beakCy = birdCy - s * 0.03;
+    const beakSteps = 88;
+    for (let bi = 0; bi < beakSteps; bi++) {
+      const t = bi / Math.max(1, beakSteps - 1);
+      const bx = beakCx + t * s * 0.26;
+      const by = beakCy + (t * t * 0.32 - 0.14) * s * 0.2;
+      for (let shell = 0; shell < 5; shell++) {
+        const off = (shell - 2) * 0.0085 * s;
+        pushSalmonPoint(a, bx, by + off, shell < 2 ? 0 : 1, idxRef, "beak", birdCx, birdCy, pulseMul, 1);
+      }
+    }
+
     const talSpecs = [
-      { fx: birdCx - s * 0.06, fy: birdCy + s * 0.16, R: s * 0.065, a0: Math.PI * 0.15, span: Math.PI * 0.65 },
-      { fx: birdCx + s * 0.02, fy: birdCy + s * 0.17, R: s * 0.058, a0: Math.PI * 0.12, span: Math.PI * 0.58 },
+      { fx: birdCx - s * 0.07, fy: birdCy + s * 0.17, R: s * 0.068, a0: Math.PI * 0.14, span: Math.PI * 0.66 },
+      { fx: birdCx + s * 0.03, fy: birdCy + s * 0.18, R: s * 0.06, a0: Math.PI * 0.11, span: Math.PI * 0.6 },
     ];
     for (const tal of talSpecs) {
-      const ts = 120;
+      const ts = 110;
       for (let k = 0; k < ts; k++) {
         const u = k / (ts - 1);
         const ang = tal.a0 + u * tal.span;
         const ox = Math.cos(ang);
         const oy = Math.sin(ang);
         for (const rr of [1.0, 0.88, 0.76]) {
-          pushSalmonPoint(a, tal.fx + ox * tal.R * rr, tal.fy + oy * tal.R * rr, rr >= 0.95 ? 0 : 1, idxRef, "talon", birdCx, birdCy, pulseMul);
+          pushSalmonPoint(
+            a,
+            tal.fx + ox * tal.R * rr,
+            tal.fy + oy * tal.R * rr,
+            rr >= 0.94 ? 0 : 1,
+            idxRef,
+            "talon",
+            birdCx,
+            birdCy,
+            pulseMul
+          );
         }
       }
     }
@@ -778,8 +1187,8 @@ function generateTotem(nowMs) {
   }
 
   /**
-   * Level 2 Orca (KW’ÉTL’EN): high-density formline U clusters — massive dorsal, ovoid eye,
-   * broad tail fluke — on a torpedo body (same point schema as Salmon for harvest / activation).
+   * Level 2 Orca (KW’ÉTL’EN): Triple-Circle v1.3.0 — concentric ovoid rings, annulus trigger fills,
+   * radial ring bridges, nested micro-ovoids / fin hooks (dense harvest mesh; capped via TOTEM_ORCA_MAX_TRIGGER_POINTS).
    */
   function drawOrca(offsetY = 0) {
     const a = [];
@@ -792,44 +1201,115 @@ function generateTotem(nowMs) {
 
     const bodyRx = s * 0.58;
     const bodyRy = s * 0.28;
-    const insideBody = (px, py) => {
-      const dx = (px - ocCx) / bodyRx;
-      const dy = (py - ocCy) / bodyRy;
-      return dx * dx + dy * dy <= 0.98;
+    const rMid = 0.62;
+    const rInner = 0.34;
+    const midRx = bodyRx * rMid;
+    const midRy = bodyRy * rMid;
+    const innRx = bodyRx * rInner;
+    const innRy = bodyRy * rInner;
+
+    const ellDist = (px, py, ecx, ecy, rx, ry) => {
+      const dx = (px - ecx) / rx;
+      const dy = (py - ecy) / ry;
+      return dx * dx + dy * dy;
     };
+    const insideEll = (px, py, rx, ry, cap = 1) => ellDist(px, py, ocCx, ocCy, rx, ry) <= cap;
 
     const rhoOr = Math.sqrt(5);
-    const orGrid = (s * 0.026) / rhoOr;
+    const gridStep = (s * 0.0245) / rhoOr;
+    const fineStep = (s * 0.021) / rhoOr;
 
-    // —— Body: thick solid torpedo bands + interior mass (~5× density)
-    const thetaSteps = 720;
-    for (let ti = 0; ti < thetaSteps; ti++) {
-      const theta = (ti / thetaSteps) * TWO_PI;
-      const vx = Math.cos(theta) * bodyRx;
-      const vy = Math.sin(theta) * bodyRy;
-      for (let rf = 0.65; rf <= 1.001; rf += 0.014) {
-        pushSalmonPoint(a, ocCx + vx * rf, ocCy + vy * rf, 0, idxRef, "body", ocCx, ocCy, pulseMul, 2);
+    const pushRingRim = (rx, ry, thetaSteps, radials) => {
+      for (let ti = 0; ti < thetaSteps; ti++) {
+        const theta = (ti / thetaSteps) * TWO_PI;
+        const vx = Math.cos(theta) * rx;
+        const vy = Math.sin(theta) * ry;
+        for (let ri = 0; ri < radials.length; ri++) {
+          const rf = radials[ri];
+          const fo = ri === 0 ? 0 : 1;
+          const sp = fo === 0 ? 1 : 2;
+          pushSalmonPoint(a, ocCx + vx * rf, ocCy + vy * rf, fo, idxRef, "ring", ocCx, ocCy, pulseMul, sp);
+        }
       }
-      for (let rf = 0.05; rf <= 0.69; rf += 0.026) {
-        pushSalmonPoint(a, ocCx + vx * rf, ocCy + vy * rf, 1, idxRef, "body", ocCx, ocCy, pulseMul, 2);
-      }
-    }
+    };
 
-    const gw = bodyRx * 2.05;
-    const gh = bodyRy * 2.05;
+    const ringRadials = [1.0, 0.988, 0.975, 0.962, 0.948, 0.934, 0.92];
+    pushRingRim(bodyRx, bodyRy, 540, ringRadials);
+    pushRingRim(midRx, midRy, 460, ringRadials.slice(0, 6));
+    pushRingRim(innRx, innRy, 400, ringRadials.slice(0, 5));
+
+    const gw = bodyRx * 2.1;
+    const gh = bodyRy * 2.1;
     let gx = ocCx - gw * 0.5;
     while (gx < ocCx + gw * 0.52) {
       let gy = ocCy - gh * 0.52;
       while (gy < ocCy + gh * 0.52) {
-        if (insideBody(gx, gy)) {
-          pushSalmonPoint(a, gx, gy, 1, idxRef, "body", ocCx, ocCy, pulseMul, 2);
+        const dOut = ellDist(gx, gy, ocCx, ocCy, bodyRx, bodyRy);
+        const dMidHole = ellDist(gx, gy, ocCx, ocCy, midRx * 0.992, midRy * 0.992);
+        if (dOut <= 0.988 && dMidHole >= 1.018) {
+          pushSalmonPoint(a, gx, gy, 1, idxRef, "triggerZone", ocCx, ocCy, pulseMul, 2);
         }
-        gy += orGrid;
+        gy += gridStep;
       }
-      gx += orGrid;
+      gx += gridStep;
     }
 
-    /** Trace a formline U: arc samples × radial shells × lateral thickness (NW Coast stacked U). */
+    gx = ocCx - gw * 0.48;
+    while (gx < ocCx + gw * 0.48) {
+      let gy = ocCy - gh * 0.48;
+      while (gy < ocCy + gh * 0.48) {
+        const dM = ellDist(gx, gy, ocCx, ocCy, midRx, midRy);
+        const dInHole = ellDist(gx, gy, ocCx, ocCy, innRx * 0.985, innRy * 0.985);
+        if (dM <= 0.992 && dInHole >= 1.028) {
+          pushSalmonPoint(a, gx, gy, 1, idxRef, "triggerZone", ocCx, ocCy, pulseMul, 2);
+        }
+        gy += gridStep * 0.94;
+      }
+      gx += gridStep * 0.94;
+    }
+
+    gx = ocCx - innRx * 1.08;
+    while (gx < ocCx + innRx * 1.08) {
+      let gy = ocCy - innRy * 1.08;
+      while (gy < ocCy + innRy * 1.08) {
+        if (insideEll(gx, gy, innRx * 0.9, innRy * 0.9, 0.97)) {
+          pushSalmonPoint(a, gx, gy, 1, idxRef, "body", ocCx, ocCy, pulseMul, 2);
+        }
+        gy += fineStep;
+      }
+      gx += fineStep;
+    }
+
+    const bridgeShells = [0.36, 0.48, 0.58, 0.68, 0.78, 0.88, 0.95, 1.0];
+    const pushRadialBridges = (phi0, phi1, count) => {
+      for (let j = 0; j < count; j++) {
+        const u = count <= 1 ? 0.5 : j / (count - 1);
+        const phi = phi0 + u * (phi1 - phi0);
+        const ox = Math.cos(phi);
+        const oy = Math.sin(phi);
+        for (let si = 0; si < bridgeShells.length; si++) {
+          const f = bridgeShells[si];
+          const fo = si >= bridgeShells.length - 2 ? 0 : 1;
+          const sp = fo === 0 ? 1 : 2;
+          pushSalmonPoint(
+            a,
+            ocCx + ox * bodyRx * f,
+            ocCy + oy * bodyRy * f,
+            fo,
+            idxRef,
+            "ringBridge",
+            ocCx,
+            ocCy,
+            pulseMul,
+            sp
+          );
+        }
+      }
+    };
+    pushRadialBridges(Math.PI * 1.02, Math.PI * 1.58, 22);
+    pushRadialBridges(Math.PI * 0.12, Math.PI * 0.42, 14);
+    pushRadialBridges(-Math.PI * 0.42, -Math.PI * 0.12, 12);
+
     const pushFormlineU = (uCx, uCy, R, a0, span, arcSteps, radials, marking, soulPriFn) => {
       for (let k = 0; k < arcSteps; k++) {
         const u = arcSteps <= 1 ? 0 : k / (arcSteps - 1);
@@ -839,111 +1319,87 @@ function generateTotem(nowMs) {
         for (const rr of radials) {
           const fo = rr >= radials[0] * 0.94 ? 0 : 1;
           const sp = typeof soulPriFn === "function" ? soulPriFn(rr, fo) : 2;
-          pushSalmonPoint(
-            a,
-            uCx + ox * R * rr,
-            uCy + oy * R * rr,
-            fo,
-            idxRef,
-            marking,
-            ocCx,
-            ocCy,
-            pulseMul,
-            sp
-          );
+          pushSalmonPoint(a, uCx + ox * R * rr, uCy + oy * R * rr, fo, idxRef, marking, ocCx, ocCy, pulseMul, sp);
         }
       }
     };
 
-    // —— Massive dorsal fin: tall nested U-shapes (primary Orca silhouette — boosted for Spiral targeting)
-    const dorsalRadials = [
-      1.0, 0.99, 0.97, 0.95, 0.93, 0.9, 0.87, 0.84, 0.8, 0.76, 0.72, 0.68, 0.64, 0.59, 0.54, 0.49, 0.44,
-    ];
+    const arcD = (n) => Math.max(24, Math.round(n * rhoOr));
+    const dorsalRadials = [1.0, 0.98, 0.95, 0.92, 0.88, 0.84, 0.79, 0.74, 0.68, 0.62, 0.55];
     const dCx = ocCx - s * 0.02;
-    const dCy = ocCy - s * 0.48;
-    const dR = s * 0.78;
-    const arcD = (n) => Math.max(28, Math.round(n * rhoOr));
-    pushFormlineU(dCx, dCy, dR, Math.PI * 1.18, Math.PI * 0.62, arcD(150), dorsalRadials, "dorsal", (rr, fo) =>
-      fo === 0 ? 1 : 2
-    );
-    pushFormlineU(dCx - s * 0.02, dCy + s * 0.04, dR * 0.88, Math.PI * 1.2, Math.PI * 0.55, arcD(120), dorsalRadials.slice(0, 11), "dorsal", () => 2);
+    const dCy = ocCy - s * 0.44;
+    const dR = s * 0.58;
+    pushFormlineU(dCx, dCy, dR, Math.PI * 1.14, Math.PI * 0.58, arcD(120), dorsalRadials, "dorsal", (rr, fo) => (fo === 0 ? 1 : 2));
+    pushFormlineU(dCx - s * 0.015, dCy + s * 0.035, dR * 0.82, Math.PI * 1.18, Math.PI * 0.48, arcD(88), dorsalRadials.slice(0, 7), "dorsal", () => 2);
 
-    // Inner spine ridge U (tighter, reinforces fin silhouette)
-    const d2Cx = ocCx + s * 0.02;
-    const d2Cy = ocCy - s * 0.12;
-    const d2R = s * 0.36;
-    pushFormlineU(d2Cx, d2Cy, d2R, Math.PI * 1.08, Math.PI * 0.48, arcD(96), [1.0, 0.94, 0.88, 0.82, 0.75, 0.68], "dorsal", (rr) => (rr >= 0.94 ? 1 : 2));
+    const tailRadials = [1.0, 0.96, 0.91, 0.85, 0.78, 0.7, 0.62];
+    const tCx = ocCx - s * 0.52;
+    const tCy = ocCy + s * 0.08;
+    const tR = s * 0.42;
+    pushFormlineU(tCx, tCy, tR, Math.PI * 0.22, Math.PI * 0.82, arcD(112), tailRadials, "tail", (rr, fo) => (fo === 0 ? 1 : 2));
 
-    // —— Broad tail fluke: wide posterior U + secondary lower lobe U (spiral silhouette anchors)
-    const tailRadials = [1.0, 0.97, 0.94, 0.9, 0.85, 0.8, 0.74, 0.68, 0.62, 0.55];
-    const tCx = ocCx - s * 0.58;
-    const tCy = ocCy + s * 0.06;
-    const tR = s * 0.55;
-    pushFormlineU(tCx, tCy, tR, Math.PI * 0.22, Math.PI * 0.92, arcD(168), tailRadials, "tail", (rr, fo) =>
-      fo === 0 ? 1 : 2
-    );
-    const t2Cx = ocCx - s * 0.52;
-    const t2Cy = ocCy + s * 0.14;
-    const t2R = s * 0.36;
-    pushFormlineU(t2Cx, t2Cy, t2R, Math.PI * 0.38, Math.PI * 0.62, arcD(128), tailRadials.slice(0, 8), "tail", () => 2);
-    const t3Cx = ocCx - s * 0.55;
-    const t3Cy = ocCy + s * 0.2;
-    const t3R = s * 0.22;
-    pushFormlineU(t3Cx, t3Cy, t3R, Math.PI * 0.35, Math.PI * 0.45, arcD(72), [1.0, 0.9, 0.82, 0.74], "tail", () => 2);
+    const pecCx = ocCx + s * 0.1;
+    const pecCy = ocCy + s * 0.14;
+    const pecR = s * 0.18;
+    pushFormlineU(pecCx, pecCy, pecR, Math.PI * 0.52, Math.PI * 0.55, arcD(48), [1.0, 0.92, 0.84, 0.76], "fin", () => 1);
+    const pec2Cx = ocCx - s * 0.02;
+    const pec2Cy = ocCy + s * 0.12;
+    const pec2R = s * 0.14;
+    pushFormlineU(pec2Cx, pec2Cy, pec2R, Math.PI * 0.62, Math.PI * 0.48, arcD(40), [1.0, 0.9, 0.8], "fin", () => 1);
 
-    // —— Ovoid eye — solid cluster
-    const eyeCx = ocCx + s * 0.34;
+    const seedCount = 26;
+    for (let si = 0; si < seedCount; si++) {
+      const baseAng = (si / seedCount) * TWO_PI + si * 0.19;
+      const radF = 0.48 + 0.28 * Math.sin(si * 2.11) + 0.08 * Math.cos(si * 1.37);
+      const ecx = ocCx + Math.cos(baseAng) * bodyRx * Math.min(0.94, Math.max(0.22, radF));
+      const ecy = ocCy + Math.sin(baseAng) * bodyRy * Math.min(0.94, Math.max(0.22, radF));
+      if (ellDist(ecx, ecy, ocCx, ocCy, innRx * 0.88, innRy * 0.88) < 1.0) continue;
+      const erx = s * (0.038 + (si % 6) * 0.007);
+      const ery = s * (0.024 + (si % 5) * 0.005);
+      const es = 44;
+      for (let ei = 0; ei < es; ei++) {
+        const a0 = (ei / es) * TWO_PI;
+        for (let wr = 1.0; wr >= 0.4; wr -= 0.12) {
+          const fo = wr >= 0.92 ? 0 : 1;
+          pushSalmonPoint(
+            a,
+            ecx + Math.cos(a0) * erx * wr,
+            ecy + Math.sin(a0) * ery * wr,
+            fo,
+            idxRef,
+            "triggerZone",
+            ocCx,
+            ocCy,
+            pulseMul,
+            fo === 0 ? 1 : 2
+          );
+        }
+      }
+    }
+
+    const eyeCx = ocCx + s * 0.32;
     const eyeCy = ocCy - s * 0.04;
-    const erx = s * 0.15;
-    const ery = s * 0.11;
-    const eyeSteps = 640;
+    const erx = s * 0.14;
+    const ery = s * 0.1;
+    const eyeSteps = 560;
     for (let ei = 0; ei < eyeSteps; ei++) {
       const a0 = (ei / eyeSteps) * TWO_PI;
-      for (let rr = 1.0; rr >= 0.54; rr -= 0.018) {
-        pushSalmonPoint(
-          a,
-          eyeCx + Math.cos(a0) * erx * rr,
-          eyeCy + Math.sin(a0) * ery * rr,
-          0,
-          idxRef,
-          "eye",
-          ocCx,
-          ocCy,
-          pulseMul,
-          0
-        );
+      for (let rr = 1.0; rr >= 0.54; rr -= 0.02) {
+        pushSalmonPoint(a, eyeCx + Math.cos(a0) * erx * rr, eyeCy + Math.sin(a0) * ery * rr, 0, idxRef, "eye", ocCx, ocCy, pulseMul, 0);
       }
     }
 
-    // —— Blowhole: dense formline ovoid (spirit vent)
-    const blowCx = ocCx + s * 0.08;
-    const blowCy = ocCy - s * 0.33;
-    const blowRx = s * 0.1;
-    const blowRy = s * 0.076;
-    const blowSteps = 280;
+    const blowCx = ocCx + s * 0.07;
+    const blowCy = ocCy - s * 0.3;
+    const blowRx = s * 0.09;
+    const blowRy = s * 0.07;
+    const blowSteps = 240;
     for (let bi = 0; bi < blowSteps; bi++) {
       const ba = (bi / blowSteps) * TWO_PI;
-      for (let br = 1.0; br >= 0.5; br -= 0.028) {
-        pushSalmonPoint(
-          a,
-          blowCx + Math.cos(ba) * blowRx * br,
-          blowCy + Math.sin(ba) * blowRy * br,
-          0,
-          idxRef,
-          "blowhole",
-          ocCx,
-          ocCy,
-          pulseMul,
-          0
-        );
+      for (let br = 1.0; br >= 0.52; br -= 0.03) {
+        pushSalmonPoint(a, blowCx + Math.cos(ba) * blowRx * br, blowCy + Math.sin(ba) * blowRy * br, 0, idxRef, "blowhole", ocCx, ocCy, pulseMul, 0);
       }
     }
-
-    // —— Pectoral flipper U (single broad marking)
-    const pecCx = ocCx + s * 0.08;
-    const pecCy = ocCy + s * 0.16;
-    const pecR = s * 0.2;
-    pushFormlineU(pecCx, pecCy, pecR, Math.PI * 0.55, Math.PI * 0.62, arcD(56), [1.0, 0.92, 0.84, 0.76, 0.68], "body", () => 1);
 
     return a;
   }
@@ -953,22 +1409,27 @@ function generateTotem(nowMs) {
     ptsByLevel[1] = salmonPts;
     syncTotemLockCounts(salmonPts.length);
     syncTotemActivatedForLevel(1, salmonPts.length);
+
+    const orcaPts = capTotemLevelPoints(2, drawOrca(0));
+    ptsByLevel[2] = orcaPts;
+    syncTotemActivatedForLevel(2, orcaPts.length);
+
+    const ospreyPts = capTotemLevelPoints(3, drawOsprey(0));
+    ptsByLevel[3] = ospreyPts;
+    syncTotemActivatedForLevel(3, ospreyPts.length);
+
+    if (typeof applyPendingTotemProgressHydration === "function") applyPendingTotemProgressHydration();
+
     const act1 = totemActivatedByLevel[1];
     for (let si = 0; si < salmonPts.length; si++) {
       salmonPts[si].active = !!act1[si];
     }
 
-    const orcaPts = capTotemLevelPoints(2, drawOrca(0));
-    ptsByLevel[2] = orcaPts;
-    syncTotemActivatedForLevel(2, orcaPts.length);
     const act2 = totemActivatedByLevel[2];
     for (let oi = 0; oi < orcaPts.length; oi++) {
       orcaPts[oi].active = !!act2[oi];
     }
 
-    const ospreyPts = capTotemLevelPoints(3, drawOsprey(0));
-    ptsByLevel[3] = ospreyPts;
-    syncTotemActivatedForLevel(3, ospreyPts.length);
     const act3 = totemActivatedByLevel[3];
     for (let oi = 0; oi < ospreyPts.length; oi++) {
       ospreyPts[oi].active = !!act3[oi];
@@ -1062,9 +1523,31 @@ function generateTotem(nowMs) {
   ctx.save();
   ctx.globalCompositeOperation = "source-over";
 
+  let forgeZoomLayer = false;
+  if (
+    typeof totemAppPhase === "string" &&
+    typeof TOTEM_PHASE_FORGE !== "undefined" &&
+    totemAppPhase === TOTEM_PHASE_FORGE &&
+    typeof totemForgeEnterStartMs === "number" &&
+    totemForgeEnterStartMs > 0
+  ) {
+    const zt = Math.min(1, (nowMs - totemForgeEnterStartMs) / 720);
+    const ze = 0.5 - 0.5 * Math.cos(Math.PI * zt);
+    const sc = 1 + 0.12 * (1 - ze);
+    const fx = w * 0.5;
+    const fy =
+      h * (typeof totemMasterLogCenterYFrac === "function" ? totemMasterLogCenterYFrac() : 0.78);
+    ctx.save();
+    forgeZoomLayer = true;
+    ctx.translate(fx, fy);
+    ctx.scale(sc, sc);
+    ctx.translate(-fx, -fy);
+  }
+
   ctx.save();
   ctx.translate(0, viewCamY);
   drawMasterTotemLog(ctx, w, h, breath01, nowMs);
+  drawTotemAnimalGhostOutline(ctx, L, breath01, viewCamY);
   ctx.restore();
 
   ctx.strokeStyle = "rgba(28, 25, 23, 0.42)";
@@ -1083,8 +1566,405 @@ function generateTotem(nowMs) {
   ctx.drawImage(totemOffscreen, 0, 0);
   ctx.restore();
 
+  if (forgeZoomLayer) ctx.restore();
+
   ctx.restore();
 
+  if (typeof canvas !== "undefined" && canvas?.classList) {
+    const spiritFrac =
+      typeof TOTEM_SPIRIT_EYE_FILL_FRAC === "number" ? TOTEM_SPIRIT_EYE_FILL_FRAC : 0.9;
+    const spirit =
+      typeof totemAppPhase === "string" &&
+      totemAppPhase === "forge" &&
+      typeof forgeTargetLevel === "number" &&
+      forgeTargetLevel === 3 &&
+      typeof totemTierFillRatio === "function" &&
+      totemTierFillRatio(3) >= spiritFrac;
+    canvas.classList.toggle("totem-spirit-eye-active", spirit);
+  }
+
   return { phase, breath01, scaleMultiplier: scaleMultiplierLive };
+}
+
+function totemLonghouseTierBands(w, h) {
+  const poleTop = h * 0.08;
+  const poleBot = h * 0.93;
+  const cx = w * 0.5;
+  const segH = (poleBot - poleTop) / 3;
+  /** Crown → base: Osprey (3), Orca (2), Salmon (1) — same screen order as the Forge pole. */
+  return [
+    { level: 3, top: poleTop, bottom: poleTop + segH, centerY: poleTop + segH * 0.5, cx },
+    { level: 2, top: poleTop + segH, bottom: poleTop + 2 * segH, centerY: poleTop + segH * 1.5, cx },
+    { level: 1, top: poleTop + 2 * segH, bottom: poleBot, centerY: poleTop + segH * 2.5, cx },
+  ];
+}
+
+function galleryHitTestTier(canvasY, w, h) {
+  const bands = totemLonghouseTierBands(w, h);
+  for (let i = 0; i < bands.length; i++) {
+    const b = bands[i];
+    if (canvasY >= b.top && canvasY <= b.bottom) return b.level;
+  }
+  return 0;
+}
+
+/** Silver wireframe for Longhouse tier ghost (scaled to band). Optional `lineAlpha` overrides stroke opacity. */
+function drawLonghouseTierGhostOutline(ctx2, level, cx, cy, sBand, lineAlpha) {
+  const s = sBand;
+  const lineA = typeof lineAlpha === "number" ? lineAlpha : 0.26;
+  ctx2.save();
+  ctx2.strokeStyle = `rgba(226, 232, 240, ${lineA})`;
+  ctx2.lineWidth = Math.max(1.2, s * 0.04);
+  ctx2.lineJoin = "round";
+  if (level === 1) {
+    const fishCy = cy - s * 0.06;
+    ctx2.beginPath();
+    ctx2.ellipse(cx, fishCy, s * 0.52, s * 0.21, 0, 0, TWO_PI);
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.ellipse(cx + s * 0.33, fishCy - s * 0.06, s * 0.12, s * 0.08, 0, 0, TWO_PI);
+    ctx2.stroke();
+  } else if (level === 2) {
+    const ocCy = cy;
+    const rx0 = s * 0.58;
+    const ry0 = s * 0.28;
+    const drawRing = (rx, ry) => {
+      ctx2.beginPath();
+      ctx2.ellipse(cx, ocCy, rx, ry, 0, 0, TWO_PI);
+      ctx2.stroke();
+    };
+    drawRing(rx0, ry0);
+    drawRing(rx0 * 0.62, ry0 * 0.62);
+    drawRing(rx0 * 0.34, ry0 * 0.34);
+    const dCx = cx - s * 0.02;
+    const dCy = ocCy - s * 0.42;
+    const dR = s * 0.52;
+    ctx2.beginPath();
+    ctx2.arc(dCx, dCy, dR, Math.PI * 1.12, Math.PI * 1.12 + Math.PI * 0.58);
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.ellipse(cx + s * 0.32, ocCy - s * 0.04, s * 0.14, s * 0.1, 0, 0, TWO_PI);
+    ctx2.stroke();
+  } else {
+    const birdCy = cy;
+    ctx2.beginPath();
+    ctx2.ellipse(cx, birdCy, s * 0.2, s * 0.11, 0, 0, TWO_PI);
+    ctx2.stroke();
+    for (const side of [-1, 1]) {
+      ctx2.beginPath();
+      ctx2.ellipse(cx + side * s * 0.52, birdCy + s * 0.02, s * 0.52, s * 0.2, side * 0.12, 0, TWO_PI);
+      ctx2.stroke();
+    }
+    ctx2.beginPath();
+    ctx2.ellipse(cx + s * 0.14, birdCy - s * 0.05, s * 0.1, s * 0.07, 0, 0, TWO_PI);
+    ctx2.stroke();
+  }
+  ctx2.restore();
+}
+
+function drawLonghouseUncarvedCedarGrain(ctx2, cx, bwTop, bwBot, top, bottom, pulse) {
+  const n = 6;
+  ctx2.save();
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const yy = top + 8 + t * (bottom - top - 16);
+    const gx0 = cx - bwTop * 0.42 - t * (bwBot - bwTop) * 0.08;
+    const gx1 = cx + bwBot * 0.42 + (1 - t) * (bwBot - bwTop) * 0.06;
+    ctx2.strokeStyle = `rgba(62, 48, 38, ${0.06 + 0.04 * pulse * (i % 2)})`;
+    ctx2.lineWidth = 0.85;
+    ctx2.beginPath();
+    ctx2.moveTo(gx0, yy);
+    ctx2.lineTo(gx1, yy + Math.sin(i * 1.7 + pulse) * 1.2);
+    ctx2.stroke();
+  }
+  ctx2.restore();
+}
+
+function galleryHitTestPracticeTap(canvasX, canvasY, w, h) {
+  if (typeof totemRunComplete !== "undefined" && totemRunComplete) return false;
+  const cx = w * 0.5;
+  const poleBot = h * 0.93;
+  const px = cx + w * 0.2;
+  const py = poleBot - h * 0.055;
+  const rr = Math.max(30, Math.min(48, w * 0.072));
+  const dx = canvasX - px;
+  const dy = canvasY - py;
+  return dx * dx + dy * dy <= rr * rr;
+}
+
+function drawLonghouseGallery(ctx2, w, h, nowMs) {
+  const deep = ctx2.createRadialGradient(w * 0.5, h * 0.45, 0, w * 0.5, h * 0.55, Math.max(w, h) * 0.95);
+  deep.addColorStop(0, "rgba(22, 32, 48, 0.55)");
+  deep.addColorStop(1, "rgba(4, 5, 8, 0.98)");
+  ctx2.fillStyle = deep;
+  ctx2.fillRect(0, 0, w, h);
+
+  const cx = w * 0.5;
+  const poleTop = h * 0.08;
+  const poleBot = h * 0.93;
+  const pillarWTop = w * 0.34;
+  const pillarWBot = w * 0.42;
+  const skew = 0.04;
+
+  ctx2.save();
+  ctx2.shadowColor = "rgba(0,0,0,0.65)";
+  ctx2.shadowBlur = 42;
+  ctx2.shadowOffsetY = 18;
+  ctx2.beginPath();
+  ctx2.moveTo(cx - pillarWTop * 0.5, poleTop);
+  ctx2.lineTo(cx + pillarWTop * 0.5, poleTop);
+  ctx2.lineTo(cx + pillarWBot * 0.5 + skew * w, poleBot);
+  ctx2.lineTo(cx - pillarWBot * 0.5 - skew * w, poleBot);
+  ctx2.closePath();
+  const pillarGrad = ctx2.createLinearGradient(cx - pillarWBot * 0.55, poleTop, cx + pillarWBot * 0.55, poleBot);
+  pillarGrad.addColorStop(0, "#1a1410");
+  pillarGrad.addColorStop(0.45, "#3e2723");
+  pillarGrad.addColorStop(0.55, "#4a342c");
+  pillarGrad.addColorStop(1, "#2d1f1a");
+  ctx2.fillStyle = pillarGrad;
+  ctx2.fill();
+  ctx2.shadowBlur = 0;
+  ctx2.shadowOffsetY = 0;
+
+  const grainN = 11;
+  for (let gi = 0; gi < grainN; gi++) {
+    const t = (gi + 1) / (grainN + 1);
+    const x = cx - pillarWBot * 0.35 + t * pillarWBot * 0.7;
+    const jx = Math.sin(gi * 7.1 + 1.2) * 1.8;
+    ctx2.strokeStyle = `rgba(0,0,0,${0.07 + (gi % 3) * 0.02})`;
+    ctx2.lineWidth = gi % 4 === 0 ? 1.1 : 0.65;
+    ctx2.beginPath();
+    ctx2.moveTo(x + jx, poleTop + 10);
+    ctx2.lineTo(x + jx * 0.9, poleBot - 10);
+    ctx2.stroke();
+  }
+  ctx2.restore();
+
+  const bands = totemLonghouseTierBands(w, h);
+  const pulse = 0.5 + 0.5 * Math.sin(nowMs * 0.0018);
+
+  for (let i = 0; i < bands.length; i++) {
+    const b = bands[i];
+    const midY = (b.top + b.bottom) * 0.5;
+    const segH = b.bottom - b.top;
+    const inset = 10 + i * 3;
+    const bwTop = pillarWTop * (0.92 - i * 0.04) - inset * 0.5;
+    const bwBot = pillarWBot * (0.92 - i * 0.035) - inset * 0.45;
+
+    const fr = typeof totemTierFillRatio === "function" ? totemTierFillRatio(b.level) : 0;
+    const solid = fr >= 0.995;
+    const locked = b.level > 1 && typeof totemTierFillRatio === "function" && totemTierFillRatio(b.level - 1) < 0.995;
+    const nextTier =
+      typeof totemFirstIncompleteTier === "function" ? totemFirstIncompleteTier() : 1;
+    const isNext = !solid && !locked && nextTier === b.level;
+
+    ctx2.save();
+    ctx2.beginPath();
+    ctx2.moveTo(cx - bwTop * 0.5, b.top + 4);
+    ctx2.lineTo(cx + bwTop * 0.5, b.top + 4);
+    ctx2.lineTo(cx + bwBot * 0.5, b.bottom - 4);
+    ctx2.lineTo(cx - bwBot * 0.5, b.bottom - 4);
+    ctx2.closePath();
+
+    if (solid) {
+      const cg = ctx2.createLinearGradient(cx - 70, b.top, cx + 80, b.bottom);
+      cg.addColorStop(0, `rgba(185, 28, 28, ${0.72 + 0.08 * pulse})`);
+      cg.addColorStop(0.45, `rgba(20, 184, 166, ${0.78})`);
+      cg.addColorStop(1, `rgba(153, 27, 27, ${0.68 + 0.06 * pulse})`);
+      ctx2.fillStyle = cg;
+      ctx2.shadowColor = "rgba(45, 212, 191, 0.35)";
+      ctx2.shadowBlur = 22;
+    } else if (locked) {
+      const ug = ctx2.createLinearGradient(cx, b.top, cx, b.bottom);
+      ug.addColorStop(0, "#2d211c");
+      ug.addColorStop(0.5, "#4a372f");
+      ug.addColorStop(1, "#3b2b24");
+      ctx2.fillStyle = ug;
+    } else if (isNext) {
+      ctx2.fillStyle = `rgba(40, 32, 28, ${0.55 + 0.08 * pulse})`;
+    } else {
+      ctx2.fillStyle = "rgba(35, 28, 24, 0.5)";
+    }
+
+    ctx2.fill();
+    ctx2.shadowBlur = 0;
+
+    if (locked) {
+      for (let k = 0; k < 7; k++) {
+        const gx = cx - bwBot * 0.4 + (k / 6) * bwBot * 0.8;
+        ctx2.strokeStyle = "rgba(0,0,0,0.12)";
+        ctx2.lineWidth = 0.8;
+        ctx2.beginPath();
+        ctx2.moveTo(gx, b.top + 6);
+        ctx2.lineTo(gx + 1, b.bottom - 6);
+        ctx2.stroke();
+      }
+    }
+
+    if (isNext) {
+      ctx2.strokeStyle = "rgba(203, 213, 225, 0.28)";
+      ctx2.lineWidth = 1.5;
+      ctx2.stroke();
+    }
+
+    if (isNext) {
+      const sGhost = Math.min(segH * 0.38, w * 0.13);
+      drawLonghouseTierGhostOutline(ctx2, b.level, cx, midY, sGhost);
+    }
+
+    const P =
+      typeof SALISH_PHONETIC !== "undefined" && SALISH_PHONETIC
+        ? SALISH_PHONETIC
+        : {
+            STEXEM: "stuh-ay-khuhm",
+            KW_ETLEN: "kw-et-lun",
+            KW_EKWE: "kwa-kwa",
+            SXT_EKW: "suh-kh-t-ay-kw",
+          };
+    const labels = {
+      3: { name: "KW’ÉKW’E", ph: P.KW_EKWE, en: "Osprey" },
+      2: { name: "KW’ÉTL’EN", ph: P.KW_ETLEN, en: "Orca" },
+      1: { name: "ST’ÉXEM", ph: P.STEXEM, en: "Salmon" },
+    };
+    const L = labels[b.level];
+    ctx2.fillStyle = solid ? "rgba(255, 251, 235, 0.95)" : "rgba(226, 232, 240, 0.78)";
+    ctx2.font = "600 13px Inter, system-ui, sans-serif";
+    ctx2.textAlign = "center";
+    ctx2.fillText(`${L.name} — ${L.en}`, cx, midY - 10);
+    ctx2.font = "italic 500 10px Inter, system-ui, sans-serif";
+    ctx2.fillStyle = solid ? "rgba(254, 243, 199, 0.88)" : "rgba(186, 230, 253, 0.72)";
+    ctx2.fillText(`(${L.ph})`, cx, midY + 8);
+
+    if (!locked && !solid) {
+      ctx2.font = "500 11px Inter, system-ui, sans-serif";
+      ctx2.fillStyle = isNext ? "rgba(186, 230, 253, 0.9)" : "rgba(148, 163, 184, 0.75)";
+      ctx2.fillText(isNext ? "Tap the ghost — enter the Forge" : "Await the elders", cx, midY + 28);
+    } else if (solid) {
+      ctx2.font = "500 10px Inter, system-ui, sans-serif";
+      ctx2.fillStyle = "rgba(204, 251, 241, 0.82)";
+      ctx2.fillText("Carved into the pole", cx, midY + 28);
+    }
+
+    ctx2.restore();
+  }
+
+  ctx2.fillStyle = "rgba(248, 250, 252, 0.82)";
+  ctx2.font = "600 13px Inter, system-ui, sans-serif";
+  ctx2.textAlign = "center";
+  ctx2.fillText("The Longhouse — Cedar Pillar", cx, h * 0.042);
+
+  if (!(typeof totemRunComplete !== "undefined" && totemRunComplete)) {
+    const cx2 = w * 0.5;
+    const poleBot = h * 0.93;
+    const px = cx2 + w * 0.2;
+    const py = poleBot - h * 0.055;
+    const rr = Math.max(30, Math.min(48, w * 0.072));
+    const pulse = 0.65 + 0.35 * Math.sin(nowMs * 0.003);
+    ctx2.save();
+    ctx2.shadowColor = "rgba(110, 231, 255, 0.45)";
+    ctx2.shadowBlur = 14 * pulse;
+    ctx2.beginPath();
+    ctx2.arc(px, py, rr, 0, TWO_PI);
+    const g = ctx2.createRadialGradient(px - rr * 0.3, py - rr * 0.3, 2, px, py, rr);
+    g.addColorStop(0, `rgba(255, 251, 235, ${0.22 + 0.08 * pulse})`);
+    g.addColorStop(0.55, "rgba(30, 41, 59, 0.88)");
+    g.addColorStop(1, "rgba(15, 23, 42, 0.95)");
+    ctx2.fillStyle = g;
+    ctx2.fill();
+    ctx2.shadowBlur = 0;
+    ctx2.strokeStyle = `rgba(110, 231, 255, ${0.35 + 0.2 * pulse})`;
+    ctx2.lineWidth = 2;
+    ctx2.stroke();
+    ctx2.fillStyle = "rgba(248, 250, 252, 0.95)";
+    ctx2.font = "700 11px Inter, system-ui, sans-serif";
+    ctx2.textAlign = "center";
+    ctx2.textBaseline = "middle";
+    ctx2.fillText("PRACTICE", px, py - 5);
+    ctx2.font = "600 9px Inter, system-ui, sans-serif";
+    ctx2.fillStyle = "rgba(186, 230, 253, 0.9)";
+    ctx2.fillText("tap", px, py + 9);
+    ctx2.restore();
+  }
+}
+
+function drawTotemPotlatchCeremony(ctx2, w, h, nowMs) {
+  const c = typeof totemPotlatchCeremony !== "undefined" ? totemPotlatchCeremony : null;
+  if (!c?.startMs) return;
+  const dur = Math.max(1, c.durationMs || 4200);
+  const uVis = Math.min(1, Math.max(0, (nowMs - c.startMs) / dur));
+  const ease = uVis * uVis * (3 - 2 * uVis);
+
+  drawLonghouseGallery(ctx2, w, h, nowMs);
+
+  ctx2.save();
+  ctx2.globalCompositeOperation = "lighter";
+  const wash = ctx2.createRadialGradient(w * 0.5, h * 0.48, 0, w * 0.5, h * 0.52, Math.max(w, h) * 0.62);
+  const pulse = Math.sin(uVis * Math.PI);
+  wash.addColorStop(0, `rgba(255, 255, 255, ${0.22 * pulse})`);
+  wash.addColorStop(0.35, `rgba(204, 251, 241, ${0.38 * pulse})`);
+  wash.addColorStop(0.55, `rgba(45, 212, 191, ${0.44 * pulse})`);
+  wash.addColorStop(1, "rgba(0,0,0,0)");
+  ctx2.fillStyle = wash;
+  ctx2.fillRect(0, 0, w, h);
+  ctx2.restore();
+
+  const cx = w * 0.5;
+  const bands = totemLonghouseTierBands(w, h);
+  const tier = typeof c.tier === "number" ? c.tier : 1;
+  const tierIdx = 3 - tier;
+  const slot = bands[tierIdx] ?? bands[1];
+  const sx = slot.cx;
+  const sy = (slot.top + slot.bottom) * 0.5;
+  const startX = w * 0.5;
+  const startY = h * 0.46;
+  const tx = startX + (sx - startX) * ease;
+  const ty = startY + (sy - startY) * ease;
+  const sc = 1 - 0.74 * ease;
+
+  ctx2.save();
+  ctx2.globalCompositeOperation = "lighter";
+  const ribbon = ctx2.createLinearGradient(startX, startY, tx, ty);
+  ribbon.addColorStop(0, `rgba(255,255,255,${0.35 * (1 - ease)})`);
+  ribbon.addColorStop(0.5, `rgba(240, 253, 250,${0.45 * ease})`);
+  ribbon.addColorStop(1, `rgba(45, 212, 191, ${0.55 * ease})`);
+  ctx2.strokeStyle = ribbon;
+  ctx2.lineWidth = 4 + 5 * ease;
+  ctx2.lineCap = "round";
+  ctx2.beginPath();
+  ctx2.moveTo(startX, startY);
+  ctx2.quadraticCurveTo(startX + (tx - startX) * 0.5, startY - h * 0.08 * ease, tx, ty);
+  ctx2.stroke();
+  ctx2.restore();
+
+  ctx2.save();
+  ctx2.translate(tx, ty);
+  ctx2.scale(sc, sc);
+  ctx2.globalAlpha = 0.88 * (1 - uVis * 0.22);
+  const ring = ctx2.createRadialGradient(0, 0, 6, 0, 0, 130);
+  ring.addColorStop(0, `rgba(255, 255, 255, ${0.5 + 0.45 * ease})`);
+  ring.addColorStop(0.42, `rgba(240, 253, 250, ${0.42 + 0.2 * ease})`);
+  ring.addColorStop(0.72, `rgba(45, 212, 191, ${0.38 + 0.35 * ease})`);
+  ring.addColorStop(1, "rgba(15, 118, 110, 0.12)");
+  ctx2.fillStyle = ring;
+  ctx2.beginPath();
+  ctx2.ellipse(0, 0, 115, 82, 0, 0, Math.PI * 2);
+  ctx2.fill();
+  ctx2.strokeStyle = `rgba(${248 + (45 - 248) * ease}, ${250 + (212 - 250) * ease}, ${252 + (191 - 252) * ease}, ${0.55 + 0.4 * ease})`;
+  ctx2.lineWidth = 2.4 + 2 * ease;
+  ctx2.stroke();
+  ctx2.strokeStyle = `rgba(45, 212, 191, ${0.35 * ease})`;
+  ctx2.lineWidth = 1.2;
+  ctx2.beginPath();
+  ctx2.ellipse(0, 0, 122, 88, 0, 0, Math.PI * 2);
+  ctx2.stroke();
+  ctx2.restore();
+
+  const sBand = Math.min((slot.bottom - slot.top) * 0.38, w * 0.13);
+  drawLonghouseTierGhostOutline(ctx2, tier, sx, (slot.top + slot.bottom) * 0.5, sBand * (0.4 + 0.6 * ease));
+
+  ctx2.fillStyle = "rgba(248, 250, 252, 0.92)";
+  ctx2.font = "600 14px Cormorant Garamond, Georgia, serif";
+  ctx2.textAlign = "center";
+  ctx2.fillText("Potlatch — the gift returns to the pole", cx, h * 0.11);
 }
 

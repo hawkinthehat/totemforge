@@ -1,9 +1,9 @@
 /**
- * TotemForge v1.0 — offline shell (cache-first).
- * Precaches HTML, JS, manifest, icons, and activation art for airplane mode.
+ * TotemForge v1.4 — offline shell (cache-first).
+ * Precaches HTML, JS, manifest, icons, ceremony audio, and activation art for airplane mode.
  */
 
-const CACHE_NAME = "totemforge-v1-static";
+const CACHE_NAME = "totemforge-v1-4-static";
 
 const JS_FILES = [
   "config.js",
@@ -36,6 +36,8 @@ function precacheOptionalUrls() {
     "favicon.ico",
     "icon-192.png",
     "icon-512.png",
+    "ceremony.mp3",
+    "assets/TripleOrca.svg",
   ].map((path) => new URL(path, base).href);
 }
 
