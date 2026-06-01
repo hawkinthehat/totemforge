@@ -320,6 +320,13 @@
     const pageX = event.pageX;
     const pageY = event.pageY;
 
+    if (typeof window.unlockTotemAudio === "function") window.unlockTotemAudio();
+    if (typeof window.setTotemClickPan === "function") window.setTotemClickPan(event.clientX, nowMs);
+    if (typeof window.playWoodSnap === "function") window.playWoodSnap(event.clientX, sectorIndex % 3);
+    if (typeof window.playTotemFluteStrike === "function") {
+      window.playTotemFluteStrike(PARTICLE_DURATION_MS);
+    }
+
     hideSnagImmediately();
     revealSector(sectorIndex);
     spawnParticleBurst(pageX, pageY, sectorNode);

@@ -3,7 +3,7 @@
  * Precaches HTML, JS, manifest, icons, ceremony audio, and activation art for airplane mode.
  */
 
-const CACHE_NAME = "totemforge-v1-4-static";
+const CACHE_NAME = "totemforge-v1-4-audio-static";
 
 const JS_FILES = [
   "config.js",

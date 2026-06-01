@@ -17,6 +17,34 @@
 
   let masterGain = null;
 
+  const BINAURAL_CARRIER_GAIN = 0.05;
+  const FLUTE_REST_GAIN = 0.15;
+  const FLUTE_STRIKE_GAIN = 0.9;
+  const FLUTE_STRIKE_ATTACK_SEC = 0.2;
+  const FLUTE_STRIKE_TOTAL_SEC = 1.5;
+  const AMBIENT_LAYER_FADE_SEC = 3;
+  const TAU = Math.PI * 2;
+
+  /** --- 6Hz theta binaural carrier: 100Hz left / 106Hz right --- */
+  let binauralGain = null;
+  let binauralLeftOsc = null;
+  let binauralRightOsc = null;
+  let binauralLeftPan = null;
+  let binauralRightPan = null;
+
+  /** --- Layered ambient bed: procedural fire, canopy wind, and flute loops --- */
+  let fireSource = null;
+  let fireFilter = null;
+  let fireGain = null;
+  let windSource = null;
+  let windFilter = null;
+  let windGain = null;
+  let windPanner = null;
+  let fluteSource = null;
+  let fluteFilter = null;
+  let fluteGain = null;
+  let ambientLayerFadeStarted = false;
+
   /** --- Pacer (Vagus drone): inhale swell / exhale fade --- */
   let pacerOsc1 = null;
   let pacerOsc2 = null;
@@ -127,6 +155,89 @@
     return buf;
   }
 
+  function createFireCrackleBuffer(ctx, seconds) {
+    const len = Math.ceil(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    let low = 0;
+    let coal = 0;
+    let ember = 0;
+    for (let i = 0; i < len; i++) {
+      const white = Math.random() * 2 - 1;
+      low = low * 0.992 + white * 0.008;
+      coal = coal * 0.86 + (Math.random() * 2 - 1) * 0.14;
+      if (Math.random() < 0.0038) ember += 0.42 + Math.random() * 0.58;
+      ember *= 0.915 + Math.random() * 0.035;
+      ch[i] = low * 0.52 + coal * 0.09 + ember * 0.32;
+      ch[i] = Math.max(-1, Math.min(1, ch[i] * 0.58));
+    }
+    return buf;
+  }
+
+  function createPentatonicFluteBuffer(ctx, seconds) {
+    const len = Math.ceil(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    const notes = [293.66, 349.23, 392.0, 440.0, 523.25, 440.0, 392.0, 349.23];
+    const beatSec = seconds / 16;
+    for (let i = 0; i < len; i++) {
+      const t = i / ctx.sampleRate;
+      const step = Math.floor(t / beatSec) % 16;
+      const note = notes[step % notes.length] * (step >= 8 ? 0.5 : 1);
+      const local = t - step * beatSec;
+      const attack = Math.min(1, local / 0.08);
+      const release = Math.max(0, 1 - Math.max(0, local - beatSec * 0.62) / (beatSec * 0.38));
+      const env = Math.sin(Math.min(1, attack) * Math.PI * 0.5) * release * release;
+      const vibrato = 1 + 0.0038 * Math.sin(TAU * 5.1 * t);
+      const f = note * vibrato;
+      const fundamental = Math.sin(TAU * f * t);
+      const second = Math.sin(TAU * f * 2.01 * t + 0.35) * 0.28;
+      const third = Math.sin(TAU * f * 3.0 * t + 1.1) * 0.08;
+      const breath = (Math.random() * 2 - 1) * 0.018;
+      ch[i] = env * (fundamental + second + third + breath) * 0.32;
+    }
+    return buf;
+  }
+
+  function setParamValueAtNow(param, value, now) {
+    try {
+      if (typeof param.cancelAndHoldAtTime === "function") {
+        param.cancelAndHoldAtTime(now);
+      } else {
+        param.cancelScheduledValues(now);
+        param.setValueAtTime(value, now);
+      }
+    } catch (_) {
+      try {
+        param.setValueAtTime(value, now);
+      } catch (__) {}
+    }
+  }
+
+  function fadeInAmbientLayers() {
+    if (!ac || ambientLayerFadeStarted) return;
+    ambientLayerFadeStarted = true;
+    const now = ac.currentTime;
+    const fadeEnd = now + AMBIENT_LAYER_FADE_SEC;
+    try {
+      if (fireGain) {
+        fireGain.gain.cancelScheduledValues(now);
+        fireGain.gain.setValueAtTime(0, now);
+        fireGain.gain.linearRampToValueAtTime(0.18, fadeEnd);
+      }
+      if (windGain) {
+        windGain.gain.cancelScheduledValues(now);
+        windGain.gain.setValueAtTime(0, now);
+        windGain.gain.linearRampToValueAtTime(0.075, fadeEnd);
+      }
+      if (fluteGain) {
+        fluteGain.gain.cancelScheduledValues(now);
+        fluteGain.gain.setValueAtTime(0, now);
+        fluteGain.gain.linearRampToValueAtTime(FLUTE_REST_GAIN, fadeEnd);
+      }
+    } catch (_) {}
+  }
+
   function buildAudioGraph() {
     const ctx = ensureContext();
     if (!ctx || masterGain) return;
@@ -134,6 +245,30 @@
     masterGain = ctx.createGain();
     masterGain.gain.value = userMuted ? 0 : 1;
     masterGain.connect(ctx.destination);
+
+    binauralGain = ctx.createGain();
+    binauralGain.gain.value = BINAURAL_CARRIER_GAIN;
+
+    binauralLeftPan = ctx.createStereoPanner();
+    binauralLeftPan.pan.value = -1;
+    binauralRightPan = ctx.createStereoPanner();
+    binauralRightPan.pan.value = 1;
+
+    binauralLeftOsc = ctx.createOscillator();
+    binauralLeftOsc.type = "sine";
+    binauralLeftOsc.frequency.value = 100;
+    binauralRightOsc = ctx.createOscillator();
+    binauralRightOsc.type = "sine";
+    binauralRightOsc.frequency.value = 106;
+
+    binauralLeftOsc.connect(binauralLeftPan);
+    binauralRightOsc.connect(binauralRightPan);
+    binauralLeftPan.connect(binauralGain);
+    binauralRightPan.connect(binauralGain);
+    binauralGain.connect(masterGain);
+
+    binauralLeftOsc.start();
+    binauralRightOsc.start();
 
     pacerPanner = ctx.createStereoPanner();
     pacerPanner.pan.value = 0;
@@ -193,6 +328,58 @@
     atmPanner.connect(masterGain);
 
     atmSource.start();
+
+    fireFilter = ctx.createBiquadFilter();
+    fireFilter.type = "lowpass";
+    fireFilter.frequency.value = 720;
+    fireFilter.Q.value = 0.5;
+
+    fireGain = ctx.createGain();
+    fireGain.gain.value = 0;
+
+    fireSource = ctx.createBufferSource();
+    fireSource.buffer = createFireCrackleBuffer(ctx, 7);
+    fireSource.loop = true;
+    fireSource.connect(fireFilter);
+    fireFilter.connect(fireGain);
+    fireGain.connect(masterGain);
+    fireSource.start();
+
+    windPanner = ctx.createStereoPanner();
+    windPanner.pan.value = 0;
+
+    windFilter = ctx.createBiquadFilter();
+    windFilter.type = "bandpass";
+    windFilter.frequency.value = 560;
+    windFilter.Q.value = 0.72;
+
+    windGain = ctx.createGain();
+    windGain.gain.value = 0;
+
+    windSource = ctx.createBufferSource();
+    windSource.buffer = createPinkNoiseBuffer(ctx, 9);
+    windSource.loop = true;
+    windSource.connect(windFilter);
+    windFilter.connect(windGain);
+    windGain.connect(windPanner);
+    windPanner.connect(masterGain);
+    windSource.start();
+
+    fluteFilter = ctx.createBiquadFilter();
+    fluteFilter.type = "lowpass";
+    fluteFilter.frequency.value = 3200;
+    fluteFilter.Q.value = 0.42;
+
+    fluteGain = ctx.createGain();
+    fluteGain.gain.value = 0;
+
+    fluteSource = ctx.createBufferSource();
+    fluteSource.buffer = createPentatonicFluteBuffer(ctx, 16);
+    fluteSource.loop = true;
+    fluteSource.connect(fluteFilter);
+    fluteFilter.connect(fluteGain);
+    fluteGain.connect(masterGain);
+    fluteSource.start();
   }
 
   function refreshMuteButtonUi() {
@@ -210,19 +397,42 @@
   window.suspendTotemSoundscapeForPotlatch = function suspendTotemSoundscapeForPotlatch() {
     potlatchDroneSuspended = true;
     const ctx = ac;
-    if (ctx && pacerGain && atmGain) {
+    if (ctx) {
       const t = ctx.currentTime;
       try {
-        pacerGain.gain.cancelScheduledValues(t);
-        pacerGain.gain.setTargetAtTime(0, t, 0.045);
-        atmGain.gain.cancelScheduledValues(t);
-        atmGain.gain.setTargetAtTime(0, t, 0.045);
+        if (pacerGain) {
+          pacerGain.gain.cancelScheduledValues(t);
+          pacerGain.gain.setTargetAtTime(0, t, 0.045);
+        }
+        if (atmGain) {
+          atmGain.gain.cancelScheduledValues(t);
+          atmGain.gain.setTargetAtTime(0, t, 0.045);
+        }
+        if (fireGain) {
+          fireGain.gain.cancelScheduledValues(t);
+          fireGain.gain.setTargetAtTime(0, t, 0.045);
+        }
+        if (windGain) {
+          windGain.gain.cancelScheduledValues(t);
+          windGain.gain.setTargetAtTime(0, t, 0.045);
+        }
+        if (fluteGain) {
+          fluteGain.gain.cancelScheduledValues(t);
+          fluteGain.gain.setTargetAtTime(0, t, 0.045);
+        }
       } catch (_) {}
     }
   };
 
   window.resumeTotemSoundscapeAfterPotlatch = function resumeTotemSoundscapeAfterPotlatch() {
     potlatchDroneSuspended = false;
+    if (!ac || !ambientLayerFadeStarted) return;
+    const t = ac.currentTime;
+    try {
+      if (fireGain) fireGain.gain.setTargetAtTime(0.18, t, 0.8);
+      if (windGain) windGain.gain.setTargetAtTime(0.075, t, 0.8);
+      if (fluteGain) fluteGain.gain.setTargetAtTime(FLUTE_REST_GAIN, t, 0.8);
+    } catch (_) {}
   };
 
   window.playTotemPotlatchCeremonyAudio = function playTotemPotlatchCeremonyAudio() {
@@ -311,7 +521,9 @@
     if (!ctx) return;
     buildAudioGraph();
     unlocked = true;
-    ctx.resume().catch(() => {});
+    const resumed = ctx.resume();
+    if (resumed?.catch) resumed.catch(() => {});
+    fadeInAmbientLayers();
     refreshMuteButtonUi();
   };
 
@@ -335,6 +547,26 @@
   };
 
   window.refreshTotemMuteButtonUi = refreshMuteButtonUi;
+
+  window.playTotemFluteStrike = function playTotemFluteStrike(totalMs) {
+    const ctx = ensureContext();
+    if (!ctx || !unlocked || userMuted || !fluteGain) return;
+    const now = ctx.currentTime;
+    const totalSec = Math.max(FLUTE_STRIKE_ATTACK_SEC + 0.05, (totalMs || FLUTE_STRIKE_TOTAL_SEC * 1000) / 1000);
+    const attackEnd = now + FLUTE_STRIKE_ATTACK_SEC;
+    const decayEnd = now + totalSec;
+    try {
+      setParamValueAtNow(fluteGain.gain, Math.max(0.0001, fluteGain.gain.value || FLUTE_REST_GAIN), now);
+      fluteGain.gain.linearRampToValueAtTime(FLUTE_STRIKE_GAIN, attackEnd);
+      fluteGain.gain.exponentialRampToValueAtTime(FLUTE_REST_GAIN, decayEnd);
+    } catch (_) {
+      try {
+        fluteGain.gain.setTargetAtTime(FLUTE_REST_GAIN, now, 0.35);
+      } catch (__) {}
+    }
+  };
+
+  window.triggerTotemFluteStrike = window.playTotemFluteStrike;
 
   window.setTotemClickPan = function setTotemClickPan(clientX, nowMs) {
     const w = window.innerWidth || 1;
@@ -500,6 +732,21 @@
     atmGain.gain.setTargetAtTime(atmAmp * (0.85 + 0.15 * breatheMix), now, 0.1);
     atmFilter.frequency.setTargetAtTime(620 + 380 * Math.sin(nowMs * 0.00038) + 200 * breatheMix, now, 0.12);
 
+    if (fireFilter && fireGain && ambientLayerFadeStarted) {
+      fireGain.gain.setTargetAtTime(0.17 + 0.025 * Math.sin(nowMs * 0.00031), now, 0.55);
+      fireFilter.frequency.setTargetAtTime(620 + 120 * Math.sin(nowMs * 0.00073), now, 0.2);
+    }
+
+    if (windFilter && windGain && windPanner && ambientLayerFadeStarted) {
+      windGain.gain.setTargetAtTime(0.064 + 0.018 * Math.sin(nowMs * 0.00042), now, 0.7);
+      windFilter.frequency.setTargetAtTime(520 + 220 * Math.sin(nowMs * 0.00029) + 120 * breatheMix, now, 0.35);
+      windPanner.pan.setTargetAtTime(0.58 * Math.sin(nowMs * 0.00022), now, 0.55);
+    }
+
+    if (fluteFilter && ambientLayerFadeStarted) {
+      fluteFilter.frequency.setTargetAtTime(2800 + 420 * breatheMix, now, 0.4);
+    }
+
     /** Micro-pan on atmosphere only (optional stereo motion) */
     atmPanner.pan.setTargetAtTime(0.22 * Math.sin(nowMs * 0.00045), now, 0.15);
 
@@ -558,5 +805,24 @@
     }
   };
 
-  window.addEventListener("DOMContentLoaded", refreshMuteButtonUi);
+  function installFirstPointerUnlock() {
+    if (typeof document === "undefined" || !document.addEventListener) return;
+    document.addEventListener(
+      "pointerdown",
+      () => {
+        if (typeof window.unlockTotemAudio === "function") window.unlockTotemAudio();
+      },
+      { once: true, capture: true, passive: true }
+    );
+  }
+
+  if (document.readyState === "loading") {
+    window.addEventListener("DOMContentLoaded", () => {
+      refreshMuteButtonUi();
+      installFirstPointerUnlock();
+    });
+  } else {
+    refreshMuteButtonUi();
+    installFirstPointerUnlock();
+  }
 })();
