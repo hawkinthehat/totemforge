@@ -2,43 +2,41 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#070a0f" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#d7a95d" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>TotemForge Neural Suite v1.4.0</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Inter:wght@500;600;700&display=swap" rel="stylesheet" />
+    <title>Coast Salish Formline Carving Canvas</title>
     <link rel="manifest" href="manifest.json" />
     <link rel="icon" href="favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
     <link rel="apple-touch-icon" href="icon-192.png" />
     <style>
       :root {
-        color-scheme: dark;
-        --bg: #070a0f;
-        --panel: rgba(18, 24, 34, 0.78);
-        --panelBorder: rgba(255, 255, 255, 0.08);
-        --text: rgba(245, 247, 255, 0.92);
-        --muted: rgba(245, 247, 255, 0.62);
-        --accent: #6ee7ff;
-        --danger: #ff6b8a;
-        --shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+        color-scheme: light;
+        --cedar-deep: #8e5a32;
+        --cedar-light: #efc77f;
+        --charcoal: #231b15;
+        --cream: #f8f1df;
+        --text: rgba(35, 27, 21, 0.88);
+        --panel: rgba(248, 241, 223, 0.72);
+        --panel-border: rgba(35, 27, 21, 0.16);
       }
 
       html,
       body {
+        width: 100%;
         height: 100%;
         margin: 0;
-        background: radial-gradient(1100px 700px at 50% 30%, rgba(110, 231, 255, 0.12), transparent 55%),
-          radial-gradient(900px 700px at 20% 70%, rgba(255, 107, 138, 0.09), transparent 55%),
-          var(--bg);
-        color: var(--text);
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
-          "Segoe UI Emoji";
         overflow: hidden;
+        background: var(--cedar-light);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: none;
       }
 
       #gameCanvas {
@@ -47,829 +45,161 @@
         width: 100vw;
         height: 100vh;
         display: block;
+        touch-action: none;
       }
 
-      /**
-       * KW’ÉKW’E Spirit Eye (final 10%): subtle silver/teal glow on the full canvas read —
-       * keyframes aligned to 12s Vagus (4s inhale / 8s exhale): swell through exhale, ease by inhale.
-       */
-      #gameCanvas.totem-spirit-eye-active {
-        animation: totemSpiritEyeShimmer 12s ease-in-out infinite;
-      }
-
-      @keyframes totemSpiritEyeShimmer {
-        0%,
-        28% {
-          filter: drop-shadow(0 0 3px rgba(226, 232, 240, 0.14));
-        }
-        42%,
-        88% {
-          filter: drop-shadow(0 0 14px rgba(248, 250, 252, 0.42)) drop-shadow(0 0 28px rgba(56, 189, 248, 0.18))
-            brightness(1.02);
-        }
-        100% {
-          filter: drop-shadow(0 0 3px rgba(226, 232, 240, 0.14));
-        }
-      }
-
-      .hud {
+      .canvas-label {
         position: fixed;
-        inset: 0;
-        pointer-events: none;
-      }
-
-      .topbar {
-        position: absolute;
-        left: 16px;
-        right: 16px;
-        top: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        pointer-events: none;
-      }
-
-      .topbar-right {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        pointer-events: none;
-      }
-
-      #audio-mute-toggle {
-        appearance: none;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(255, 255, 255, 0.06);
-        color: rgba(245, 247, 255, 0.9);
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-        box-shadow: var(--shadow);
-        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
-        pointer-events: auto;
-        flex-shrink: 0;
-      }
-
-      #audio-mute-toggle:hover {
-        transform: translateY(-1px);
-        border-color: rgba(110, 231, 255, 0.45);
-        background: rgba(110, 231, 255, 0.12);
-      }
-
-      #audio-mute-toggle[aria-pressed="true"] {
-        border-color: rgba(255, 107, 138, 0.55);
-        background: rgba(255, 107, 138, 0.12);
-      }
-
-      .brand {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        pointer-events: none;
-      }
-
-      .brand strong {
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        font-size: 12px;
-        color: rgba(245, 247, 255, 0.86);
-      }
-
-      .brand span {
-        font-size: 12px;
-        color: var(--muted);
-      }
-
-      .modes {
-        display: flex;
-        gap: 10px;
-        padding: 10px;
-        border-radius: 14px;
+        left: max(16px, env(safe-area-inset-left));
+        top: max(14px, env(safe-area-inset-top));
+        z-index: 5;
+        max-width: min(420px, calc(100vw - 32px));
+        padding: 12px 14px;
+        border: 1px solid var(--panel-border);
+        border-radius: 16px;
         background: var(--panel);
-        border: 1px solid var(--panelBorder);
-        box-shadow: var(--shadow);
-        pointer-events: auto;
-      }
-
-      .modes button {
-        appearance: none;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(255, 255, 255, 0.06);
-        color: rgba(245, 247, 255, 0.9);
-        padding: 8px 10px 9px;
-        min-height: 44px;
-        border-radius: 12px;
-        cursor: pointer;
-        font-weight: 650;
-        font-size: 12px;
-        letter-spacing: 0.02em;
-        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
-        user-select: none;
-      }
-
-      .modes button:hover {
-        transform: translateY(-1px);
-        border-color: rgba(110, 231, 255, 0.45);
-        background: rgba(110, 231, 255, 0.12);
-      }
-
-      .modes button[aria-pressed="true"] {
-        border-color: rgba(110, 231, 255, 0.7);
-        background: rgba(110, 231, 255, 0.16);
-        box-shadow: 0 0 0 1px rgba(110, 231, 255, 0.2) inset;
-      }
-
-      #pacer-label {
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%);
+        box-shadow: 0 16px 44px rgba(35, 27, 21, 0.18);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         pointer-events: none;
-        text-align: center;
-        white-space: pre-line;
-        font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        letter-spacing: 0.22em;
+      }
+
+      .canvas-label strong {
+        display: block;
+        margin-bottom: 2px;
+        color: var(--charcoal);
+        font-size: 13px;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
-        font-weight: 700;
-        font-size: 22px;
-        color: rgba(245, 247, 255, 0.86);
-        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45), 0 16px 70px rgba(0, 0, 0, 0.75);
-        mix-blend-mode: screen;
-        padding: 10px 14px;
-        border-radius: 14px;
-        background: rgba(0, 0, 0, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.06);
-        backdrop-filter: blur(8px);
       }
 
-      body[data-totem-phase="forge"] #pacer-label,
-      body[data-totem-phase="potlatch"] #pacer-label {
-        top: auto;
-        bottom: calc(22px + env(safe-area-inset-bottom, 0px));
-        letter-spacing: 0.14em;
-        font-size: clamp(15px, 3.8vw, 20px);
-        max-width: min(92vw, 420px);
-      }
-
-      .hint {
-        position: absolute;
-        left: 16px;
-        bottom: 14px;
-        padding: 10px 12px;
-        border-radius: 14px;
-        background: rgba(0, 0, 0, 0.28);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        color: rgba(245, 247, 255, 0.7);
+      .canvas-label span {
+        display: block;
         font-size: 12px;
-        pointer-events: none;
+        line-height: 1.4;
+        color: rgba(35, 27, 21, 0.66);
+      }
+
+      #canvas-status {
+        position: fixed;
+        left: 50%;
+        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+        z-index: 5;
+        transform: translateX(-50%);
+        width: max-content;
         max-width: min(560px, calc(100vw - 32px));
+        padding: 10px 14px;
+        border: 1px solid rgba(35, 27, 21, 0.14);
+        border-radius: 999px;
+        background: rgba(248, 241, 223, 0.68);
+        box-shadow: 0 14px 38px rgba(35, 27, 21, 0.16);
+        color: rgba(35, 27, 21, 0.72);
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.04em;
+        text-align: center;
+        pointer-events: none;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
       }
 
-      .kbd {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 10px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(255, 255, 255, 0.05);
-        color: rgba(245, 247, 255, 0.86);
-        font-weight: 700;
-        letter-spacing: 0.03em;
-      }
-
-      .suite-start-overlay {
+      .start-overlay {
         position: fixed;
         inset: 0;
-        z-index: 100;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        z-index: 20;
+        display: grid;
+        place-items: center;
         padding: min(32px, 5vw);
         box-sizing: border-box;
-        background: radial-gradient(ellipse 120% 80% at 50% 35%, rgba(18, 28, 42, 0.92), rgba(4, 6, 10, 0.96));
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
-        opacity: 1;
-        transition: opacity 0.48s ease;
+        background:
+          radial-gradient(720px 420px at 50% 42%, rgba(248, 241, 223, 0.56), rgba(186, 85, 54, 0.18) 56%, transparent 70%),
+          rgba(35, 27, 21, 0.12);
+        backdrop-filter: blur(9px);
+        -webkit-backdrop-filter: blur(9px);
+        transition: opacity 360ms ease;
       }
 
-      .suite-start-overlay--exiting {
+      .start-overlay[hidden] {
+        display: none !important;
+      }
+
+      .start-overlay.is-exiting {
         opacity: 0;
         pointer-events: none;
       }
 
-      .suite-start-overlay[hidden] {
-        display: none !important;
-      }
-
-      .suite-start-card {
-        width: min(380px, 100%);
-        padding: 28px 26px;
-        border-radius: 18px;
-        background: var(--panel);
-        border: 1px solid var(--panelBorder);
-        box-shadow: var(--shadow);
-        text-align: center;
-        pointer-events: auto;
-      }
-
-      .suite-start-card--minimal {
-        padding: 22px 22px;
-      }
-
-      .suite-start-logo {
-        display: block;
-        margin: 0 auto 20px;
-        width: min(132px, 36vw);
-        height: auto;
+      .start-card {
+        width: min(430px, 100%);
+        padding: 24px;
+        border: 1px solid rgba(35, 27, 21, 0.17);
         border-radius: 22px;
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+        background: rgba(248, 241, 223, 0.84);
+        box-shadow: 0 24px 70px rgba(35, 27, 21, 0.28);
+        text-align: center;
       }
 
-      .suite-start-card--minimal .suite-start-logo {
-        width: 64px;
-        margin-bottom: 12px;
-      }
-
-      .suite-start-heading {
-        margin: 0 0 8px;
-        font-family: Inter, system-ui, sans-serif;
-        font-size: 18px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: rgba(245, 247, 255, 0.94);
-      }
-
-      .suite-start-tagline {
-        margin: 0 0 12px;
-        font-size: 12px;
-        line-height: 1.45;
-        letter-spacing: 0.04em;
-        color: rgba(110, 231, 255, 0.82);
-        font-weight: 600;
-      }
-
-      .suite-start-sub {
-        margin: 0 0 22px;
-        font-size: 13px;
-        line-height: 1.45;
-        color: var(--muted);
-      }
-
-      .suite-start-btn {
-        appearance: none;
-        width: 100%;
-        border: 1px solid rgba(110, 231, 255, 0.42);
-        background: rgba(110, 231, 255, 0.14);
-        color: rgba(245, 247, 255, 0.96);
-        padding: 14px 18px;
-        border-radius: 14px;
-        cursor: pointer;
-        font-family: Inter, system-ui, sans-serif;
-        font-weight: 700;
-        font-size: 15px;
-        letter-spacing: 0.04em;
-        transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
-      }
-
-      .suite-start-btn:hover {
-        transform: translateY(-1px);
-        border-color: rgba(110, 231, 255, 0.65);
-        background: rgba(110, 231, 255, 0.22);
-      }
-
-      .suite-start-btn:focus-visible {
-        outline: 2px solid rgba(110, 231, 255, 0.85);
-        outline-offset: 3px;
-      }
-
-      /* Salish first-run: contextual tips (snags 1–3), high-contrast readable type */
-      .salish-tooltip-root {
-        position: fixed;
-        left: 50%;
-        bottom: 88px;
-        transform: translateX(-50%) translateY(12px);
-        z-index: 96;
-        width: min(520px, calc(100vw - 28px));
-        max-height: min(46vh, 380px);
-        overflow-y: auto;
-        padding: 16px 18px;
-        border-radius: 16px;
-        background: rgba(5, 8, 14, 0.88);
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(110, 231, 255, 0.12) inset;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.55s ease, transform 0.55s ease;
-        -webkit-backdrop-filter: blur(12px);
-        backdrop-filter: blur(12px);
-      }
-
-      .salish-tooltip-root.salish-tip-visible {
-        opacity: 1;
-        transform: translateX(-50%) translateY(0);
-      }
-
-      .salish-tooltip-root[hidden] {
-        display: none !important;
-      }
-
-      .salish-tooltip-inner {
-        font-family: Inter, system-ui, sans-serif;
-        font-size: 13px;
-        line-height: 1.5;
-        color: #f1f5f9;
-        text-shadow: 0 1px 0 rgba(0, 0, 0, 0.75);
-      }
-
-      .salish-tip-plain {
-        margin: 0;
-        font-size: 14px;
-        font-weight: 600;
-        line-height: 1.55;
-        letter-spacing: 0.01em;
-        color: #f8fafc;
-      }
-
-      .salish-tip-kicker {
+      .start-card h1 {
         margin: 0 0 10px;
-        font-family: "Cormorant Garamond", "Times New Roman", serif;
-        font-size: 22px;
-        font-weight: 700;
-        letter-spacing: 0.03em;
-        color: #ffffff;
-        text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+        color: var(--charcoal);
+        font-size: clamp(24px, 7vw, 38px);
+        line-height: 1.02;
+        letter-spacing: 0.01em;
       }
 
-      .salish-tip-lead {
-        margin: 0 0 14px;
-        font-weight: 600;
-        color: #e2e8f0;
+      .start-card p {
+        margin: 0 0 18px;
+        color: rgba(35, 27, 21, 0.72);
+        font-size: 14px;
+        line-height: 1.5;
       }
 
-      .salish-tip-table {
+      .start-card button {
+        appearance: none;
         width: 100%;
-        border-collapse: collapse;
-        font-size: 12px;
-        margin: 0;
-      }
-
-      .salish-tip-table th,
-      .salish-tip-table td {
-        padding: 8px 10px;
-        text-align: left;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        vertical-align: top;
-      }
-
-      .salish-tip-table th {
-        font-weight: 700;
-        color: #f8fafc;
-        width: 34%;
-        font-size: 11px;
-        letter-spacing: 0.02em;
-      }
-
-      .salish-tip-table td {
-        color: #cbd5e1;
-      }
-
-      .salish-tip-table .salish-goal {
-        color: #94a3b8;
-        font-size: 11px;
-        display: block;
-        margin-top: 4px;
-      }
-
-      .salish-tip-table .salish-context {
-        font-family: "Cormorant Garamond", serif;
-        font-style: italic;
-        font-size: 13px;
-        color: #7dd3fc;
-      }
-
-      .salish-toast {
-        position: fixed;
-        bottom: 96px;
-        left: 50%;
-        z-index: 97;
-        max-width: min(440px, calc(100vw - 28px));
-        padding: 14px 18px;
-        border-radius: 14px;
-        background: rgba(5, 8, 14, 0.92);
-        border: 1px solid rgba(110, 231, 255, 0.42);
-        box-shadow: var(--shadow);
-        color: #f1f5f9;
-        font-family: "Cormorant Garamond", serif;
-        font-size: 17px;
-        font-weight: 600;
-        line-height: 1.45;
-        text-align: center;
-        opacity: 0;
-        transform: translateX(-50%) translateY(10px);
-        pointer-events: none;
-        transition: opacity 0.45s ease, transform 0.45s ease;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-      }
-
-      .salish-toast.salish-toast-visible {
-        opacity: 1;
-        transform: translateX(-50%) translateY(0);
-      }
-
-      .salish-toast[hidden] {
-        display: none !important;
-      }
-
-      .mode-label-stack {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1px;
-        line-height: 1.15;
-      }
-
-      .mode-label-stack .mode-salish {
-        font-weight: 650;
-        font-size: 12px;
-        letter-spacing: 0.02em;
-      }
-
-      .mode-label-stack .mode-phonetic {
-        font-size: 0.8em;
-        font-style: italic;
-        font-weight: 500;
-        letter-spacing: 0.03em;
-        color: rgba(186, 230, 253, 0.72);
-        line-height: 1.2;
-      }
-
-      body[data-practice-mode="true"][data-totem-phase="forge"] {
-        background: radial-gradient(1000px 640px at 50% 28%, rgba(254, 243, 199, 0.14), transparent 52%),
-          radial-gradient(820px 600px at 18% 72%, rgba(253, 230, 138, 0.08), transparent 50%), var(--bg);
-      }
-
-      #gallery-practice-btn {
-        position: fixed;
-        right: calc(16px + env(safe-area-inset-right, 0px));
-        bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-        z-index: 93;
-        display: none;
-        align-items: center;
-        gap: 8px;
-        padding: 12px 16px;
-        border-radius: 14px;
-        border: 1px solid rgba(110, 231, 255, 0.42);
-        background: rgba(12, 18, 28, 0.88);
-        color: rgba(248, 250, 252, 0.95);
-        font-family: Inter, system-ui, sans-serif;
-        font-weight: 700;
-        font-size: 13px;
-        letter-spacing: 0.06em;
+        min-height: 48px;
+        border: 1px solid rgba(35, 27, 21, 0.28);
+        border-radius: 15px;
+        background: linear-gradient(160deg, #231b15, #4a2b1f);
+        color: #f8f1df;
+        cursor: pointer;
+        font: 800 14px/1 Inter, ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
-        cursor: pointer;
-        box-shadow: var(--shadow);
-        pointer-events: auto;
+        box-shadow: 0 14px 34px rgba(35, 27, 21, 0.28);
       }
 
-      #gallery-practice-btn .gallery-practice-phonetic {
-        display: block;
-        font-size: 0.72em;
-        font-style: italic;
-        font-weight: 500;
-        letter-spacing: 0.04em;
-        text-transform: none;
-        color: rgba(186, 230, 253, 0.85);
-      }
-
-      body[data-totem-phase="gallery"] #gallery-practice-btn {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        text-align: right;
-      }
-
-      body[data-totem-phase="gallery"][data-totem-run-complete="true"] #gallery-practice-btn {
-        display: none;
-      }
-
-      body[data-practice-mode="true"] .topbar .modes {
-        opacity: 0.22;
-        pointer-events: none;
-      }
-
-      #practice-motor-panel {
-        position: fixed;
-        left: 50%;
-        bottom: calc(96px + env(safe-area-inset-bottom, 0px));
-        transform: translateX(-50%);
-        z-index: 94;
-        display: none;
-        flex-direction: row;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 12px;
-        border-radius: 14px;
-        background: rgba(12, 18, 28, 0.88);
-        border: 1px solid rgba(110, 231, 255, 0.28);
-        box-shadow: var(--shadow);
-        pointer-events: auto;
-      }
-
-      body[data-totem-phase="forge"][data-practice-mode="true"] #practice-motor-panel {
-        display: flex;
-      }
-
-      .practice-motor-btn {
-        appearance: none;
-        border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(255, 255, 255, 0.06);
-        color: rgba(245, 247, 255, 0.9);
-        padding: 8px 10px;
-        border-radius: 10px;
-        cursor: pointer;
-        font-weight: 650;
-        font-size: 11px;
-        letter-spacing: 0.02em;
-        white-space: nowrap;
-      }
-
-      .practice-motor-btn[aria-pressed="true"] {
-        border-color: rgba(110, 231, 255, 0.65);
-        background: rgba(110, 231, 255, 0.16);
-      }
-
-      .mentor-welcome-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 92;
-        display: flex;
-        align-items: flex-end;
-        justify-content: center;
-        padding: 24px 18px calc(32px + env(safe-area-inset-bottom, 0px));
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.45s ease;
-      }
-
-      .mentor-welcome-overlay[hidden] {
-        display: none !important;
-      }
-
-      .mentor-welcome-overlay--visible {
-        opacity: 1;
-        pointer-events: auto;
-      }
-
-      .mentor-welcome-parchment {
-        max-width: min(420px, calc(100vw - 32px));
-        padding: 22px 24px 20px;
-        border-radius: 4px 4px 12px 12px;
-        background: linear-gradient(165deg, rgba(254, 243, 199, 0.97) 0%, rgba(253, 230, 138, 0.94) 45%, rgba(251, 191, 36, 0.22) 100%);
-        border: 1px solid rgba(120, 53, 15, 0.35);
-        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.65);
-        color: #292524;
-        font-family: "Cormorant Garamond", Georgia, serif;
-        text-align: center;
-        pointer-events: auto;
-      }
-
-      .mentor-welcome-parchment h3 {
-        margin: 0 0 12px;
-        font-size: 22px;
-        font-weight: 700;
-        letter-spacing: 0.03em;
-        color: #1c1917;
-      }
-
-      .mentor-welcome-parchment p {
-        margin: 0 0 14px;
-        font-size: 16px;
-        line-height: 1.5;
-        font-weight: 600;
-      }
-
-      .mentor-welcome-parchment .mentor-phonetic-list {
-        margin: 0 0 16px;
-        padding: 0;
-        list-style: none;
-        font-size: 14px;
-        line-height: 1.45;
-        font-weight: 600;
-        color: #44403c;
-        font-family: Inter, system-ui, sans-serif;
-      }
-
-      .mentor-welcome-parchment .mentor-phonetic-list em,
-      .mentor-welcome-parchment .mentor-inline-phonetic {
-        font-style: italic;
-        font-weight: 600;
-        font-size: 0.88em;
-        color: #57534e;
-      }
-
-      .mentor-welcome-parchment .mentor-continue {
-        appearance: none;
-        width: 100%;
-        border: 1px solid rgba(120, 53, 15, 0.45);
-        background: rgba(254, 243, 199, 0.5);
-        color: #1c1917;
-        padding: 12px 14px;
-        border-radius: 10px;
-        cursor: pointer;
-        font-family: Inter, system-ui, sans-serif;
-        font-weight: 700;
-        font-size: 14px;
-      }
-
-      .mentor-welcome-parchment .mentor-continue:hover {
-        background: rgba(255, 255, 255, 0.65);
-      }
-
-      #potlatch-completion-dialogue {
-        position: fixed;
-        left: 50%;
-        top: 50%;
-        transform: translate(-50%, -50%) scale(0.98);
-        z-index: 99;
-        max-width: min(440px, calc(100vw - 28px));
-        padding: 22px 24px;
-        border-radius: 16px;
-        background: rgba(8, 12, 20, 0.92);
-        border: 1px solid rgba(45, 212, 191, 0.45);
-        box-shadow: var(--shadow);
-        color: #f8fafc;
-        font-family: "Cormorant Garamond", Georgia, serif;
-        font-size: 19px;
-        font-weight: 600;
-        line-height: 1.5;
-        text-align: center;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.5s ease, transform 0.5s ease;
-      }
-
-      #potlatch-completion-dialogue.potlatch-completion-dialogue--visible {
-        opacity: 1;
-        transform: translate(-50%, -50%) scale(1);
-        pointer-events: auto;
-      }
-
-      #potlatch-completion-dialogue[hidden] {
-        display: none !important;
+      .start-card button:focus-visible {
+        outline: 3px solid rgba(186, 85, 54, 0.72);
+        outline-offset: 3px;
       }
     </style>
   </head>
   <body>
-    <canvas id="gameCanvas"></canvas>
+    <canvas id="gameCanvas" aria-label="Single-screen Coast Salish formline carving canvas"></canvas>
 
-    <button
-      type="button"
-      id="gallery-practice-btn"
-      aria-label="Practice Workshop: light cedar preview, no saving, motor skill drills"
-    >
-      Practice
-      <span class="gallery-practice-phonetic">Workshop · no Potlatch</span>
-    </button>
+    <div class="canvas-label" aria-hidden="true">
+      <strong>Formline Carving Canvas</strong>
+      <span>Tap the moving red cedar snag; each strike opens the next ST'ÉXEM section.</span>
+    </div>
 
-    <div
-      id="mentor-welcome-overlay"
-      class="mentor-welcome-overlay"
-      hidden
-      aria-hidden="true"
-      role="dialog"
-      aria-labelledby="mentor-welcome-heading"
-      aria-modal="true"
-    >
-      <div class="mentor-welcome-parchment">
-        <h3 id="mentor-welcome-heading">Welcome to the Forge</h3>
+    <div id="canvas-status" aria-live="polite">Center your gaze on the steady cedar sweep.</div>
+
+    <div id="start-overlay" class="start-overlay" role="dialog" aria-modal="true" aria-labelledby="start-heading">
+      <div class="start-card">
+        <h1 id="start-heading">Coast Salish Formline Carving Canvas</h1>
         <p>
-          Your journey begins with <strong>ST’ÉXEM</strong>
-          <em class="mentor-inline-phonetic">(stuh-ay-khuhm)</em> — Salmon at the base of the pole. Touch the base tier to start carving.
+          A single yellow cedar block, one horizontal ST'ÉXEM composition, and a steady red cedar sweep
+          for calm tactile focus.
         </p>
-        <ul class="mentor-phonetic-list">
-          <li><strong>SXT’EKW</strong> <em>(suh-kh-t-ay-kw)</em> — Neural weaver</li>
-          <li><strong>KW’ÉTL’EN</strong> <em>(kw-et-lun)</em> — Orca</li>
-          <li><strong>KW’ÉKW’E</strong> <em>(kwa-kwa)</em> — Osprey</li>
-        </ul>
-        <button type="button" id="mentor-welcome-continue" class="mentor-continue">Continue</button>
+        <button id="start-button" type="button" autofocus>Begin carving</button>
       </div>
     </div>
 
-    <div id="practice-motor-panel" aria-label="Practice motor skills">
-      <span style="font: 600 10px Inter, system-ui, sans-serif; color: rgba(148, 163, 184, 0.95); margin-right: 4px">Practice</span>
-      <button type="button" class="practice-motor-btn" data-practice-tier="1" aria-pressed="true">Standard</button>
-      <button type="button" class="practice-motor-btn" data-practice-tier="2" aria-pressed="false">Bilateral</button>
-      <button type="button" class="practice-motor-btn" data-practice-tier="3" aria-pressed="false">Contralateral</button>
-    </div>
-
-    <div
-      id="potlatch-completion-dialogue"
-      hidden
-      aria-live="polite"
-      aria-hidden="true"
-      role="status"
-    >
-      The spirit is wrapped. You are grounded. Return when the mind needs more light.
-    </div>
-
-    <div class="hud" aria-hidden="false">
-      <div class="topbar">
-        <div class="brand">
-          <strong>TotemForge</strong>
-          <span>Longhouse • Forge • Potlatch • Vagus breath — v1.1</span>
-        </div>
-
-        <div class="topbar-right">
-          <div class="modes" role="group" aria-label="Remedy Modes">
-            <button id="mode-weaver" type="button" data-mode="0" aria-pressed="true" title="SXT’EKW (suh-kh-t-ay-kw) — Horizontal EMDR">
-              <span class="mode-label-stack">
-                <span class="mode-salish">SXT’EKW</span>
-                <span class="mode-phonetic">(suh-kh-t-ay-kw)</span>
-              </span>
-            </button>
-            <button id="mode-osprey" type="button" data-mode="1" aria-pressed="false" title="KW’ÉKW’E (kwa-kwa) — Saccadic grid">
-              <span class="mode-label-stack">
-                <span class="mode-salish">KW’ÉKW’E</span>
-                <span class="mode-phonetic">(kwa-kwa)</span>
-              </span>
-            </button>
-            <button id="mode-salmon" type="button" data-mode="2" aria-pressed="false" title="ST’ÉXEM (stuh-ay-khuhm) — Salmon Run (Vertical vent)">
-              <span class="mode-label-stack">
-                <span class="mode-salish">ST’ÉXEM</span>
-                <span class="mode-phonetic">(stuh-ay-khuhm)</span>
-              </span>
-            </button>
-            <button id="mode-orca" type="button" data-mode="3" aria-pressed="false" title="KW’ÉTL’EN (kw-et-lun) — Orbiting / spiral">
-              <span class="mode-label-stack">
-                <span class="mode-salish">KW’ÉTL’EN</span>
-                <span class="mode-phonetic">(kw-et-lun)</span>
-              </span>
-            </button>
-          </div>
-          <button
-            id="audio-mute-toggle"
-            type="button"
-            aria-pressed="false"
-            aria-label="Mute suite audio"
-            title="Mute"
-          ></button>
-        </div>
-      </div>
-
-      <div id="pacer-label">Inhale</div>
-
-      <div class="hint">
-        <span class="kbd">Longhouse:</span> tap a cedar block to enter the Forge and carve. Use <span class="kbd">Practice</span> for a yellow-cedar workshop (no saving, no Potlatch). Phonetics under each Salish name stay visible in the bar above.
-        <span class="kbd">Forge:</span> shatter snags; at 100% the Potlatch wraps the animal onto the pole. <span class="kbd">Esc</span> resets (forge) or exits Practice to the Longhouse.
-      </div>
-    </div>
-
-    <div
-      id="suite-start-overlay"
-      class="suite-start-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="suite-start-heading"
-    >
-      <div class="suite-start-card">
-        <img
-          class="suite-start-logo"
-          src="totemforge-logo-icon.png"
-          width="112"
-          height="112"
-          alt=""
-          decoding="async"
-        />
-        <h2 id="suite-start-heading" class="suite-start-heading">TotemForge</h2>
-        <p class="suite-start-tagline">Coast Salish formline • Breath • Carving</p>
-        <p class="suite-start-sub">Awaken sound and touch, then meet the Master Log on Salish Sea ground.</p>
-        <button type="button" id="suite-start-btn" class="suite-start-btn" autofocus>Begin the Forge</button>
-      </div>
-    </div>
-
-    <div id="salish-tooltip-root" class="salish-tooltip-root" hidden aria-live="polite" aria-hidden="true">
-      <div class="salish-tooltip-inner"></div>
-    </div>
-
-    <div id="salish-reveal-toast" class="salish-toast" hidden aria-live="polite" aria-hidden="true" role="status"></div>
-
-    <!-- Scripts at bottom; relative paths -->
-    <script src="js/config.js"></script>
     <script src="js/haptics.js"></script>
-    <script src="js/geometry.js"></script>
-    <script src="js/physics.js"></script>
-    <script src="js/audio.js"></script>
     <script src="js/engine.js"></script>
     <script>
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js');
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js");
       }
     </script>
   </body>

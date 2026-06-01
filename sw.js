@@ -1,18 +1,11 @@
 /**
- * TotemForge v1.4 — offline shell (cache-first).
- * Precaches HTML, JS, manifest, icons, ceremony audio, and activation art for airplane mode.
+ * Coast Salish Formline Carving Canvas offline shell.
  */
 
-const CACHE_NAME = "totemforge-v1-4-static";
+const CACHE_NAME = "formline-canvas-v2-static";
 
-const JS_FILES = [
-  "config.js",
-  "haptics.js",
-  "geometry.js",
-  "physics.js",
-  "audio.js",
-  "engine.js",
-];
+const REQUIRED_URLS = ["index.html", "js/haptics.js", "js/engine.js", "manifest.json"];
+const OPTIONAL_URLS = ["favicon.ico", "icon-192.png", "icon-512.png"];
 
 function scopeBaseUrl() {
   const scope = self.registration?.scope;
@@ -20,36 +13,19 @@ function scopeBaseUrl() {
   return new URL("./", self.location);
 }
 
-function precacheRequiredUrls() {
-  const base = scopeBaseUrl();
-  const indexUrl = new URL("index.html", base).href;
-  const jsUrls = JS_FILES.map((name) => new URL(`js/${name}`, base).href);
-  const manifestUrl = new URL("manifest.json", base).href;
-  return [indexUrl, ...jsUrls, manifestUrl];
-}
-
-/** Branding — precached when present (activation screen + install icons). */
-function precacheOptionalUrls() {
-  const base = scopeBaseUrl();
-  return [
-    "totemforge-logo-icon.png",
-    "favicon.ico",
-    "icon-192.png",
-    "icon-512.png",
-    "ceremony.mp3",
-    "assets/TripleOrca.svg",
-  ].map((path) => new URL(path, base).href);
+function toScopedUrl(path) {
+  return new URL(path, scopeBaseUrl()).href;
 }
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      await cache.addAll(precacheRequiredUrls());
-      for (const url of precacheOptionalUrls()) {
+      await cache.addAll(REQUIRED_URLS.map(toScopedUrl));
+      for (const path of OPTIONAL_URLS) {
         try {
-          await cache.add(url);
+          await cache.add(toScopedUrl(path));
         } catch {
-          /* optional branding assets may be absent until added to the repo */
+          // Optional install assets can be absent in preview environments.
         }
       }
       await self.skipWaiting();
@@ -59,9 +35,10 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name)))
-    ).then(() => self.clients.claim())
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))))
+      .then(() => self.clients.claim())
   );
 });
 
@@ -70,20 +47,12 @@ self.addEventListener("fetch", (event) => {
 
   event.respondWith(
     (async () => {
-      const hit = await caches.match(event.request);
-      if (hit) return hit;
+      const cached = await caches.match(event.request);
+      if (cached) return cached;
 
-      const indexUrl = new URL("index.html", scopeBaseUrl()).href;
       if (event.request.mode === "navigate") {
-        const page = await caches.match(indexUrl);
+        const page = await caches.match(toScopedUrl("index.html"));
         if (page) return page;
-        try {
-          return await fetch(event.request);
-        } catch {
-          const fallback = await caches.match(indexUrl);
-          if (fallback) return fallback;
-          throw new TypeError("Offline and index.html is not cached.");
-        }
       }
 
       return fetch(event.request);
