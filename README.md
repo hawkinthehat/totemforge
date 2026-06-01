@@ -1,31 +1,27 @@
+# Coast Salish Formline Carving Canvas
 
-<img width="1365" height="768" alt="totemforge-logo-icon" src="https://github.com/user-attachments/assets/e4389b51-5762-4889-bd7d-8f2611b274ea" />
-TotemForge Neural Suite (v1.1.0)
-A sovereign, local-first Progressive Web App (PWA) designed for somatic grounding and neural stabilization through Coast Salish-inspired bilateral stimulation.
+A local-first Progressive Web App built around one full-screen yellow cedar carving surface.
 
-🏛️ Core Philosophy
-Cultural Stewardship: Integrates traditional Salish frameworks—ST’ÉXEM (Salmon), KW’ÉTL’EN (Orca), and KW’ÉKW’E (Osprey)—into the visual and mechanical progression.
+## Experience
 
-Neural Lock Architecture: Combines 4s Inhale / 8s Exhale Vagus nerve entrainment with horizontal (EMDR) and cross-body (Contralateral) eye-tracking.
+- A single horizontal ST'ÉXEM formline composition is centered on a textured cedar block.
+- A unified low-opacity charcoal silhouette keeps the uncarved wood present beneath the finished artwork.
+- A red cedar snag sweeps calmly across the center on a 10-second horizontal cycle.
+- Each successful touch strike uses a generous 45px hit area, hides the snag for 1.5 seconds, and opens the next anatomical formline section.
+- Each strike releases 35-45 irregular splinters that fly from the exact touch point into the section being opened while shifting from bark tones to the finished cream and charcoal palette.
 
-Privacy-First: Decentralized storage using device-local logic. No cloud tracking, no data monetization.
+## Run locally
 
-🛠️ Technical Stack
-Framework: Next.js / React / Tailwind CSS.
+```sh
+python3 -m http.server 4173
+```
 
-State Management: Local-first architecture optimized for Airplane Mode functionality.
+Open `http://127.0.0.1:4173/`.
 
-Sensory Engine:
+## Verification
 
-Audio: Web Audio API synthesized Bilateral Cedar Snaps.
-
-Haptics: Vibration API for tactile somatic feedback.
-
-Physics: "Brisk Zen" calibration (1.5s spawn / 4s travel) for smooth-pursuit eye movement.
-
-🏹 How to Use
-Grounding: Follow the rhythmic expansion of the Master Log to stabilize breathing.
-
-Carving: Shatter the incoming Cedar Snags to clear the field and "paint" the Totem fragments.
-
-Ascension: Complete each animal tier to build the full 3-tier pole.
+```sh
+node --check js/engine.js
+node --check js/haptics.js
+node --check sw.js
+```
