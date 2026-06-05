@@ -1,417 +1,581 @@
-// Layered sweep renderer with sector reveal progression.
+// Layered Sweep Engine with static SVG assets (no dynamic path tracking).
 (() => {
   "use strict";
 
   const SECTOR_COUNT = 9;
-  const FULL_SWEEP_CYCLE_MS = 10000;
-  const PARTICLE_DURATION_MS = 1500;
+  const SWEEP_CYCLE_MS = 10000;
+  const SHATTER_MS = 1500;
+  const TOUCH_RADIUS_PX = 45;
   const PARTICLE_MIN = 35;
   const PARTICLE_MAX = 45;
-  const SNAG_RESPAWN_FADE_MS = 280;
-  const SNAG_TOUCH_RADIUS_PX = 45;
+  const BREATH_CYCLE_MS = 19000;
+  const BREATH_INHALE_MS = 4000;
+  const BREATH_HOLD_MS = 7000;
+  const BREATH_EXHALE_MS = 8000;
   const PARTICLE_COLORS = ["#231b15", "#ba5536", "#f8f1df"];
-  const SECTOR_REVEAL_ORDER = Array.from({ length: SECTOR_COUNT }, (_, i) => i);
 
   const state = {
     root: null,
     snag: null,
-    particleLayer: null,
     sectors: [],
-    revealedSectors: new Set(),
-    nextRevealStep: 0,
-    hiddenUntil: 0,
-    snagHidden: false,
+    particles: null,
+    companion: null,
+    revealedCount: 0,
+    snagHiddenUntil: 0,
+    snagIsHidden: false,
+    engineStartMs: 0,
+    breathStartMs: 0,
     rafId: 0,
   };
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function lerp(start, end, t) {
+    return start + (end - start) * t;
+  }
+
+  function easeInOut(t) {
+    const n = clamp(t, 0, 1);
+    return n * n * (3 - 2 * n);
+  }
 
   function randomBetween(min, max) {
     return min + Math.random() * (max - min);
   }
 
-  function pingPong01(t) {
-    const phase = t - Math.floor(t);
-    return phase < 0.5 ? phase * 2 : 2 - phase * 2;
-  }
-
   function ensureStyles() {
-    if (document.getElementById("layered-sweep-engine-style")) return;
+    if (document.getElementById("totemforge-layered-sweep-style")) return;
+
     const style = document.createElement("style");
-    style.id = "layered-sweep-engine-style";
+    style.id = "totemforge-layered-sweep-style";
     style.textContent = `
-      #layered-sweep-engine {
+      #totemforge-layered-sweep {
         position: fixed;
         inset: 0;
-        width: 100vw;
-        height: 100vh;
-        z-index: 120;
+        z-index: 200;
         overflow: hidden;
         touch-action: none;
-        background: #1c130f;
+        font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       }
-      #layered-sweep-engine .lse-base-layer {
+
+      #totemforge-layered-sweep .tf-base-layer {
         position: absolute;
         inset: 0;
         background:
           repeating-linear-gradient(
-            90deg,
-            rgba(252, 221, 154, 0.22) 0px,
-            rgba(252, 221, 154, 0.22) 2px,
-            rgba(177, 117, 61, 0.24) 2px,
-            rgba(177, 117, 61, 0.24) 9px
+            92deg,
+            rgba(252, 228, 170, 0.25) 0px,
+            rgba(252, 228, 170, 0.25) 2px,
+            rgba(188, 132, 76, 0.24) 3px,
+            rgba(188, 132, 76, 0.24) 11px
           ),
-          radial-gradient(circle at 14% 24%, rgba(243, 206, 128, 0.35) 0%, transparent 42%),
-          radial-gradient(circle at 84% 68%, rgba(124, 76, 44, 0.33) 0%, transparent 36%),
-          linear-gradient(165deg, #8f5b32 0%, #d8a56f 38%, #f4cf92 62%, #9a643d 100%);
-        filter: saturate(1.08) contrast(1.04);
+          radial-gradient(circle at 15% 24%, rgba(253, 225, 163, 0.34) 0%, transparent 41%),
+          radial-gradient(circle at 84% 70%, rgba(109, 69, 40, 0.35) 0%, transparent 36%),
+          linear-gradient(160deg, #8e5a33 0%, #c58b55 40%, #f4c987 64%, #9a6238 100%);
+        filter: saturate(1.08) contrast(1.06);
       }
-      #layered-sweep-engine .lse-salmon-layer {
+
+      #totemforge-layered-sweep .tf-brand-header {
         position: absolute;
+        top: max(12px, env(safe-area-inset-top, 0px));
         left: 50%;
-        top: 50%;
-        width: min(93vw, 1160px);
-        height: min(72vh, 700px);
-        transform: translate(-50%, -50%);
+        transform: translateX(-50%);
+        z-index: 7;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         pointer-events: none;
       }
-      #layered-sweep-engine .lse-mask-layer {
+
+      #totemforge-layered-sweep .tf-hawk-icon {
+        width: 48px;
+        height: 48px;
+        margin-bottom: 8px;
+        fill: rgba(255, 255, 255, 0.75);
+        display: block;
+      }
+
+      #totemforge-layered-sweep .tf-brand-title {
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+        font-weight: 700;
+        font-size: 11px;
+        color: #cbd5e1;
+      }
+
+      #totemforge-layered-sweep .tf-art-layer {
+        position: absolute;
+        left: 50%;
+        top: 52%;
+        width: min(94vw, 1140px);
+        height: min(72vh, 690px);
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      #totemforge-layered-sweep .tf-art-layer svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      #totemforge-layered-sweep .tf-mask-layer {
         position: absolute;
         inset: 0;
         display: grid;
         grid-template-columns: repeat(${SECTOR_COUNT}, minmax(0, 1fr));
+        z-index: 2;
         pointer-events: none;
       }
-      #layered-sweep-engine .lse-sector-mask {
-        background: rgba(9, 7, 6, 0.9);
-        box-shadow: inset -1px 0 rgba(255, 255, 255, 0.03);
+
+      #totemforge-layered-sweep .tf-sector {
+        background: rgba(8, 6, 5, 0.91);
+        box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03);
         opacity: 1;
-        visibility: visible;
+        transition: opacity 220ms ease;
       }
-      #layered-sweep-engine .lse-sector-mask.sector-revealed {
+
+      #totemforge-layered-sweep .tf-sector.is-revealed {
         opacity: 0;
-        visibility: hidden;
       }
-      #layered-sweep-engine .lse-particles {
+
+      #totemforge-layered-sweep .tf-particle-layer {
         position: absolute;
         inset: 0;
+        z-index: 5;
         pointer-events: none;
       }
-      #layered-sweep-engine .lse-particle {
+
+      #totemforge-layered-sweep .tf-particle {
         position: absolute;
         left: 0;
         top: 0;
         border-radius: 999px;
         opacity: 1;
         transform: translate(0px, 0px) scale(1);
-        transition:
-          transform ${PARTICLE_DURATION_MS}ms linear,
-          opacity ${PARTICLE_DURATION_MS}ms linear;
-        will-change: transform, opacity;
+        transition: transform ${SHATTER_MS}ms linear, opacity ${SHATTER_MS}ms linear;
       }
-      #layered-sweep-engine #layered-snag {
+
+      #totemforge-layered-sweep #tf-red-cedar-snag {
         position: absolute;
         left: 0;
         top: 0;
-        width: ${SNAG_TOUCH_RADIUS_PX * 2}px;
-        height: ${SNAG_TOUCH_RADIUS_PX * 2}px;
+        width: ${TOUCH_RADIUS_PX * 2}px;
+        height: ${TOUCH_RADIUS_PX * 2}px;
         transform: translate(-50%, -50%);
         border: 0;
-        background: transparent;
-        padding: 0;
         margin: 0;
+        padding: 0;
+        background: transparent;
         cursor: pointer;
         touch-action: none;
         pointer-events: auto !important;
         opacity: 1;
-        transition: opacity ${SNAG_RESPAWN_FADE_MS}ms ease;
+        transition: opacity 240ms ease;
+        z-index: 6;
       }
-      #layered-sweep-engine #layered-snag.lse-hidden {
+
+      #totemforge-layered-sweep #tf-red-cedar-snag.is-hidden {
         opacity: 0;
         pointer-events: none !important;
       }
-      #layered-sweep-engine .lse-hit-cushion {
+
+      #totemforge-layered-sweep .tf-touch-zone {
         position: absolute;
         inset: 0;
         border-radius: 999px;
-        background: transparent;
         pointer-events: auto !important;
       }
-      #layered-sweep-engine .lse-snag-shell {
+
+      #totemforge-layered-sweep .tf-snag-shell {
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 34px;
-        height: 26px;
-        border-radius: 58% 42% 48% 52% / 62% 52% 48% 38%;
-        background: linear-gradient(148deg, #7e341f 0%, #ba5536 42%, #d38363 82%, #9a3c24 100%);
-        border: 2px solid rgba(35, 27, 21, 0.95);
+        width: 36px;
+        height: 28px;
         transform: translate(-50%, -50%);
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.34);
+        border-radius: 58% 42% 52% 48% / 62% 54% 46% 38%;
+        border: 3px solid #4a2211;
+        background: linear-gradient(160deg, #7f3119 0%, #8f3f23 52%, #6a2b16 100%);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
         pointer-events: none;
       }
-      #layered-sweep-engine .lse-snag-core {
+
+      #totemforge-layered-sweep .tf-snag-core {
         position: absolute;
         left: 50%;
         top: 50%;
-        width: 13px;
-        height: 9px;
+        width: 14px;
+        height: 10px;
+        transform: translate(-16%, -62%);
         border-radius: 999px;
-        background: rgba(248, 241, 223, 0.94);
-        transform: translate(-20%, -64%);
+        background: #8b3a1e;
         pointer-events: none;
+      }
+
+      #totemforge-layered-sweep .tf-vagus-companion {
+        position: absolute;
+        right: max(22px, env(safe-area-inset-right, 0px));
+        bottom: max(20px, env(safe-area-inset-bottom, 0px));
+        width: min(26vw, 180px);
+        min-width: 132px;
+        z-index: 6;
+        pointer-events: none;
+        transform-origin: 50% 50%;
+      }
+
+      #totemforge-layered-sweep .tf-vagus-companion svg {
+        width: 100%;
+        height: auto;
+        display: block;
+        fill: rgba(11, 11, 11, 0.94);
+        stroke: rgba(255, 255, 255, 0.26);
+        stroke-width: 3;
       }
     `;
     document.head.appendChild(style);
   }
 
-  function createSalmonArtMarkup() {
+  function hawkIconMarkup() {
+    return `
+      <svg class="tf-hawk-icon" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <path d="M8 35 L28 30 L41 20 L54 14 L49 25 L58 24 L48 33 L46 41 L37 39 L27 47 L17 45 L24 38 L8 35 Z"></path>
+      </svg>
+    `;
+  }
+
+  function salmonArtMarkup() {
     return `
       <svg viewBox="0 0 1200 700" role="img" aria-label="Salmon illustration">
         <defs>
-          <linearGradient id="salmonBodyFill" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#f8d7a9" />
-            <stop offset="37%" stop-color="#f2c389" />
-            <stop offset="75%" stop-color="#ebad63" />
-            <stop offset="100%" stop-color="#c97a42" />
+          <linearGradient id="tf-salmon-body" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#f8d7a9"></stop>
+            <stop offset="38%" stop-color="#f3c892"></stop>
+            <stop offset="72%" stop-color="#e8a95f"></stop>
+            <stop offset="100%" stop-color="#c97842"></stop>
           </linearGradient>
-          <linearGradient id="salmonTopBand" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#7a2f20" />
-            <stop offset="100%" stop-color="#b65536" />
+          <linearGradient id="tf-salmon-top" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#7e2f1f"></stop>
+            <stop offset="100%" stop-color="#b45836"></stop>
           </linearGradient>
-          <linearGradient id="salmonBellyBand" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stop-color="#f9ebce" />
-            <stop offset="100%" stop-color="#f2ddba" />
+          <linearGradient id="tf-salmon-belly" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#f9ebce"></stop>
+            <stop offset="100%" stop-color="#f8dfb9"></stop>
           </linearGradient>
-          <filter id="salmonShadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#1b130e" flood-opacity="0.35" />
+          <filter id="tf-salmon-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#1b130d" flood-opacity="0.4"></feDropShadow>
           </filter>
         </defs>
-        <g transform="translate(80 50)" filter="url(#salmonShadow)">
+        <g transform="translate(80 52)" filter="url(#tf-salmon-shadow)">
           <path
             d="M130 315 C215 215 388 168 620 176 C771 182 907 246 965 322 C905 392 766 452 616 460 C390 473 220 425 130 330 C82 368 54 373 34 362 C57 340 69 322 69 322 C69 322 56 302 34 280 C55 268 83 274 130 315 Z"
-            fill="url(#salmonBodyFill)"
+            fill="url(#tf-salmon-body)"
             stroke="#231b15"
             stroke-width="13"
             stroke-linejoin="round"
-          />
+          ></path>
           <path
             d="M146 298 C238 219 418 192 617 201 C770 206 862 250 931 322 C860 390 764 430 615 434 C424 439 246 414 146 346"
             fill="none"
-            stroke="url(#salmonTopBand)"
+            stroke="url(#tf-salmon-top)"
             stroke-width="56"
             stroke-linecap="round"
             opacity="0.96"
-          />
+          ></path>
           <path
             d="M166 346 C274 398 424 421 614 414 C726 408 814 380 896 322 C810 269 719 248 619 244 C425 238 278 260 166 303"
             fill="none"
-            stroke="url(#salmonBellyBand)"
+            stroke="url(#tf-salmon-belly)"
             stroke-width="42"
             stroke-linecap="round"
             opacity="0.92"
-          />
+          ></path>
           <path
             d="M374 324 C417 301 485 293 550 301 C519 333 515 354 553 390 C491 396 419 383 374 360 C348 347 348 337 374 324 Z"
             fill="#6f2d1f"
             stroke="#231b15"
             stroke-width="10"
-          />
-          <ellipse cx="724" cy="314" rx="54" ry="36" fill="#f8f1df" stroke="#231b15" stroke-width="10" />
-          <ellipse cx="731" cy="314" rx="22" ry="15" fill="#231b15" />
+          ></path>
+          <ellipse cx="724" cy="314" rx="54" ry="36" fill="#f8f1df" stroke="#231b15" stroke-width="10"></ellipse>
+          <ellipse cx="731" cy="314" rx="22" ry="15" fill="#231b15"></ellipse>
           <path
             d="M286 330 C314 288 320 257 299 219 C354 242 391 266 424 311 C389 355 354 381 299 407 C320 369 315 343 286 330 Z"
             fill="#d8884d"
             stroke="#231b15"
             stroke-width="8"
-          />
+          ></path>
           <path
             d="M518 408 C560 420 612 420 658 406 C634 453 626 492 624 548 C586 496 552 451 518 408 Z"
             fill="#c66f3b"
             stroke="#231b15"
             stroke-width="8"
-          />
+          ></path>
         </g>
       </svg>
     `;
   }
 
-  function hideLegacyUi() {
-    const canvas = document.getElementById("gameCanvas");
-    if (canvas) canvas.style.display = "none";
-    document.querySelectorAll(".hud, #gallery-practice-btn, #practice-motor-panel").forEach((element) => {
-      element.style.display = "none";
+  function companionMarkup() {
+    return `
+      <svg viewBox="0 0 420 210" role="img" aria-label="Salmon companion silhouette">
+        <path d="M42 112 C82 66 174 40 280 45 C346 49 386 76 404 112 C385 146 342 168 277 170 C173 174 84 153 42 122 C28 132 17 134 9 128 C19 120 23 112 23 112 C23 112 18 104 9 96 C17 90 29 92 42 112 Z"></path>
+      </svg>
+    `;
+  }
+
+  function hideLegacyRenderingSurface() {
+    const selectors = [
+      "#gameCanvas",
+      ".hud",
+      "#gallery-practice-btn",
+      "#practice-motor-panel",
+      "#mentor-welcome-overlay",
+      "#potlatch-completion-dialogue",
+      "#suite-start-overlay",
+      "#salish-tooltip-root",
+      "#salish-reveal-toast",
+    ];
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((node) => {
+        node.style.display = "none";
+      });
     });
   }
 
-  function nextSectorIndexInProgression() {
-    while (state.nextRevealStep < SECTOR_REVEAL_ORDER.length) {
-      const sectorIndex = SECTOR_REVEAL_ORDER[state.nextRevealStep];
-      if (!state.revealedSectors.has(sectorIndex)) return sectorIndex;
-      state.nextRevealStep += 1;
+  function createRoot() {
+    const oldRoot = document.getElementById("totemforge-layered-sweep");
+    if (oldRoot) oldRoot.remove();
+
+    const root = document.createElement("div");
+    root.id = "totemforge-layered-sweep";
+    root.setAttribute("role", "application");
+    root.setAttribute("aria-label", "Layered sweep engine");
+
+    const baseLayer = document.createElement("div");
+    baseLayer.className = "tf-base-layer";
+
+    const brandHeader = document.createElement("div");
+    brandHeader.className = "tf-brand-header";
+    brandHeader.innerHTML = `${hawkIconMarkup()}<div class="tf-brand-title">Totemforge Neural Suite</div>`;
+
+    const artLayer = document.createElement("div");
+    artLayer.className = "tf-art-layer";
+    artLayer.innerHTML = salmonArtMarkup();
+
+    const maskLayer = document.createElement("div");
+    maskLayer.className = "tf-mask-layer";
+    const sectors = [];
+    for (let index = 0; index < SECTOR_COUNT; index += 1) {
+      const sector = document.createElement("div");
+      sector.className = "tf-sector";
+      sector.dataset.sector = String(index);
+      maskLayer.appendChild(sector);
+      sectors.push(sector);
     }
-    return -1;
+
+    const particleLayer = document.createElement("div");
+    particleLayer.className = "tf-particle-layer";
+
+    const snag = document.createElement("button");
+    snag.id = "tf-red-cedar-snag";
+    snag.type = "button";
+    snag.setAttribute("aria-label", "Tap moving red cedar snag target");
+    snag.innerHTML = `
+      <span class="tf-touch-zone"></span>
+      <span class="tf-snag-shell"></span>
+      <span class="tf-snag-core"></span>
+    `;
+    snag.style.setProperty("pointer-events", "auto", "important");
+
+    const companion = document.createElement("div");
+    companion.className = "tf-vagus-companion";
+    companion.innerHTML = companionMarkup();
+
+    root.append(baseLayer, artLayer, maskLayer, particleLayer, snag, companion, brandHeader);
+    document.body.appendChild(root);
+
+    state.root = root;
+    state.snag = snag;
+    state.sectors = sectors;
+    state.particles = particleLayer;
+    state.companion = companion;
+    state.revealedCount = 0;
+    state.snagHiddenUntil = 0;
+    state.snagIsHidden = false;
   }
 
-  function revealSector(sectorIndex) {
-    if (sectorIndex < 0 || sectorIndex >= state.sectors.length) return;
-    const sectorNode = state.sectors[sectorIndex];
-    if (!sectorNode || state.revealedSectors.has(sectorIndex)) return;
-    state.revealedSectors.add(sectorIndex);
-    state.nextRevealStep += 1;
-    sectorNode.classList.add("sector-revealed");
+  function revealNextSector() {
+    if (state.revealedCount >= state.sectors.length) return null;
+    const targetSector = state.sectors[state.revealedCount];
+    if (!targetSector) return null;
+    targetSector.classList.add("is-revealed");
+    state.revealedCount += 1;
+    return targetSector;
   }
 
-  function spawnParticleBurst(pageX, pageY, sectorNode) {
-    if (!state.particleLayer || !state.root) return;
+  function spawnShatterBurst(clientX, clientY, sectorNode) {
+    if (!state.root || !state.particles || !sectorNode) return;
+
     const rootBounds = state.root.getBoundingClientRect();
     const sectorBounds = sectorNode.getBoundingClientRect();
-    const startX = pageX - window.scrollX - rootBounds.left;
-    const startY = pageY - window.scrollY - rootBounds.top;
+    const originX = clientX - rootBounds.left;
+    const originY = clientY - rootBounds.top;
     const count = PARTICLE_MIN + Math.floor(Math.random() * (PARTICLE_MAX - PARTICLE_MIN + 1));
-
     const sectorMinX = sectorBounds.left - rootBounds.left;
     const sectorMaxX = sectorBounds.right - rootBounds.left;
     const sectorMinY = sectorBounds.top - rootBounds.top;
     const sectorMaxY = sectorBounds.bottom - rootBounds.top;
 
-    for (let i = 0; i < count; i += 1) {
+    for (let index = 0; index < count; index += 1) {
       const particle = document.createElement("span");
-      const size = randomBetween(2.2, 5.4);
-      particle.className = "lse-particle";
+      const size = randomBetween(2.2, 6.3);
+      particle.className = "tf-particle";
       particle.style.width = `${size.toFixed(2)}px`;
       particle.style.height = `${size.toFixed(2)}px`;
-      particle.style.left = `${startX.toFixed(2)}px`;
-      particle.style.top = `${startY.toFixed(2)}px`;
-      particle.style.background = PARTICLE_COLORS[(Math.random() * PARTICLE_COLORS.length) | 0];
-      state.particleLayer.appendChild(particle);
+      particle.style.left = `${originX.toFixed(2)}px`;
+      particle.style.top = `${originY.toFixed(2)}px`;
+      particle.style.background = PARTICLE_COLORS[Math.floor(Math.random() * PARTICLE_COLORS.length)];
+      state.particles.appendChild(particle);
 
-      const tx = randomBetween(sectorMinX, sectorMaxX);
-      const ty = randomBetween(sectorMinY, sectorMaxY);
-      const deltaX = tx - startX;
-      const deltaY = ty - startY;
-      const scale = randomBetween(0.6, 1.7);
+      const targetX = randomBetween(sectorMinX, sectorMaxX);
+      const targetY = randomBetween(sectorMinY, sectorMaxY);
+      const deltaX = targetX - originX;
+      const deltaY = targetY - originY;
+      const scale = randomBetween(0.55, 1.65);
+
       requestAnimationFrame(() => {
         particle.style.transform = `translate(${deltaX.toFixed(2)}px, ${deltaY.toFixed(2)}px) scale(${scale.toFixed(2)})`;
         particle.style.opacity = "0";
       });
-      window.setTimeout(() => particle.remove(), PARTICLE_DURATION_MS + 60);
+
+      window.setTimeout(() => particle.remove(), SHATTER_MS + 80);
     }
   }
 
-  function hideSnagImmediately() {
+  function hideSnag() {
     if (!state.snag) return;
-    state.snag.classList.add("lse-hidden");
-    state.snagHidden = true;
+    state.snag.classList.add("is-hidden");
+    state.snagIsHidden = true;
   }
 
-  function showSnagSmoothly() {
+  function showSnag() {
     if (!state.snag) return;
-    state.snag.classList.remove("lse-hidden");
-    state.snagHidden = false;
+    state.snag.classList.remove("is-hidden");
+    state.snagIsHidden = false;
   }
 
-  function onSnagHit(event) {
+  function onSnagTouch(event) {
     event.preventDefault();
     const nowMs = performance.now();
-    if (nowMs < state.hiddenUntil) return;
-    const sectorIndex = nextSectorIndexInProgression();
-    if (sectorIndex < 0) return;
+    if (nowMs < state.snagHiddenUntil) return;
 
-    const sectorNode = state.sectors[sectorIndex];
-    const pageX = event.pageX;
-    const pageY = event.pageY;
+    const sectorIndex = state.revealedCount;
+    const sectorNode = revealNextSector();
+    if (!sectorNode) return;
 
     if (typeof window.unlockTotemAudio === "function") window.unlockTotemAudio();
     if (typeof window.setTotemClickPan === "function") window.setTotemClickPan(event.clientX, nowMs);
     if (typeof window.playWoodSnap === "function") window.playWoodSnap(event.clientX, sectorIndex % 3);
     if (typeof window.playTotemFluteStrike === "function") {
-      window.playTotemFluteStrike(PARTICLE_DURATION_MS);
+      window.playTotemFluteStrike(SHATTER_MS);
     }
 
-    hideSnagImmediately();
-    revealSector(sectorIndex);
-    spawnParticleBurst(pageX, pageY, sectorNode);
-    state.hiddenUntil = nowMs + PARTICLE_DURATION_MS;
+    hideSnag();
+    spawnShatterBurst(event.clientX, event.clientY, sectorNode);
+    state.snagHiddenUntil = nowMs + SHATTER_MS;
   }
 
-  function updateSnagPosition(nowMs) {
-    if (!state.root || !state.snag) return;
-    const bounds = state.root.getBoundingClientRect();
-    const phase = pingPong01(nowMs / FULL_SWEEP_CYCLE_MS);
-    const minX = bounds.width * 0.06;
-    const maxX = bounds.width * 0.94;
-    const x = minX + (maxX - minX) * phase;
-    const y = bounds.height * 0.52;
-    state.snag.style.left = `${x.toFixed(2)}px`;
-    state.snag.style.top = `${y.toFixed(2)}px`;
+  function snagSweepPosition(nowMs, width, height) {
+    const cycleMs = (nowMs - state.engineStartMs) % SWEEP_CYCLE_MS;
+    const halfCycle = SWEEP_CYCLE_MS / 2;
+    const travel = cycleMs <= halfCycle ? cycleMs / halfCycle : 1 - (cycleMs - halfCycle) / halfCycle;
+    const minX = width * 0.06;
+    const maxX = width * 0.94;
+    return {
+      x: minX + (maxX - minX) * travel,
+      y: height * 0.52,
+    };
   }
 
-  function frame(nowMs) {
-    updateSnagPosition(nowMs);
-    if (state.snagHidden && nowMs >= state.hiddenUntil) showSnagSmoothly();
-    state.rafId = requestAnimationFrame(frame);
+  function colorLerp(from, to, t) {
+    const a = {
+      r: (from >> 16) & 255,
+      g: (from >> 8) & 255,
+      b: from & 255,
+    };
+    const b = {
+      r: (to >> 16) & 255,
+      g: (to >> 8) & 255,
+      b: to & 255,
+    };
+    const mix = clamp(t, 0, 1);
+    const r = Math.round(lerp(a.r, b.r, mix));
+    const g = Math.round(lerp(a.g, b.g, mix));
+    const bl = Math.round(lerp(a.b, b.b, mix));
+    return `rgb(${r}, ${g}, ${bl})`;
   }
 
-  function createScene() {
-    const existing = document.getElementById("layered-sweep-engine");
-    if (existing) existing.remove();
+  function updateCompanionBreath(nowMs) {
+    if (!state.companion) return;
 
-    const root = document.createElement("div");
-    root.id = "layered-sweep-engine";
-    root.setAttribute("aria-label", "Layered sweep renderer");
-    root.setAttribute("role", "img");
+    const phaseMs = (nowMs - state.breathStartMs) % BREATH_CYCLE_MS;
+    let scale = 1;
+    let glowColor = "rgb(0, 128, 128)";
 
-    const baseLayer = document.createElement("div");
-    baseLayer.className = "lse-base-layer";
-
-    const salmonLayer = document.createElement("div");
-    salmonLayer.className = "lse-salmon-layer";
-    salmonLayer.innerHTML = createSalmonArtMarkup();
-
-    const maskLayer = document.createElement("div");
-    maskLayer.className = "lse-mask-layer";
-    const sectorNodes = [];
-    for (let i = 0; i < SECTOR_COUNT; i += 1) {
-      const sector = document.createElement("div");
-      sector.className = "lse-sector-mask";
-      sector.dataset.sectorIndex = String(i);
-      maskLayer.appendChild(sector);
-      sectorNodes.push(sector);
+    if (phaseMs < BREATH_INHALE_MS) {
+      const inhaleProgress = easeInOut(phaseMs / BREATH_INHALE_MS);
+      scale = lerp(1, 1.15, inhaleProgress);
+      glowColor = "rgb(0, 128, 128)";
+    } else if (phaseMs < BREATH_INHALE_MS + BREATH_HOLD_MS) {
+      const holdProgress = (phaseMs - BREATH_INHALE_MS) / BREATH_HOLD_MS;
+      const pulse = Math.sin(holdProgress * Math.PI * 2) * 0.008;
+      scale = 1.15 + pulse;
+      glowColor = "rgb(0, 128, 128)";
+    } else {
+      const exhaleProgress = easeInOut((phaseMs - BREATH_INHALE_MS - BREATH_HOLD_MS) / BREATH_EXHALE_MS);
+      scale = lerp(1.15, 1, exhaleProgress);
+      glowColor = colorLerp(0x008080, 0xcc2929, exhaleProgress);
     }
 
-    const particleLayer = document.createElement("div");
-    particleLayer.className = "lse-particles";
+    state.companion.style.transform = `scale(${scale.toFixed(4)})`;
+    state.companion.style.filter =
+      `drop-shadow(0 0 8px ${glowColor}) ` +
+      `drop-shadow(0 0 20px ${glowColor})`;
+  }
 
-    const snag = document.createElement("button");
-    snag.type = "button";
-    snag.id = "layered-snag";
-    snag.setAttribute("aria-label", "Tap moving cedar snag");
-    snag.innerHTML = `
-      <span class="lse-hit-cushion"></span>
-      <span class="lse-snag-shell"></span>
-      <span class="lse-snag-core"></span>
-    `;
-    snag.style.setProperty("pointer-events", "auto", "important");
-    snag.addEventListener("pointerdown", onSnagHit, { passive: false });
+  function animate(nowMs) {
+    if (state.root && state.snag) {
+      const bounds = state.root.getBoundingClientRect();
+      const position = snagSweepPosition(nowMs, bounds.width, bounds.height);
+      state.snag.style.left = `${position.x.toFixed(2)}px`;
+      state.snag.style.top = `${position.y.toFixed(2)}px`;
+    }
 
-    root.append(baseLayer, salmonLayer, maskLayer, particleLayer, snag);
-    document.body.appendChild(root);
+    if (state.snagIsHidden && nowMs >= state.snagHiddenUntil) {
+      showSnag();
+    }
 
-    state.root = root;
-    state.snag = snag;
-    state.particleLayer = particleLayer;
-    state.sectors = sectorNodes;
-    state.revealedSectors.clear();
-    state.nextRevealStep = 0;
-    state.hiddenUntil = 0;
-    state.snagHidden = false;
+    updateCompanionBreath(nowMs);
+    state.rafId = requestAnimationFrame(animate);
+  }
+
+  function bindInteractions() {
+    if (!state.snag) return;
+    state.snag.addEventListener("pointerdown", onSnagTouch, { passive: false });
   }
 
   function init() {
     ensureStyles();
-    hideLegacyUi();
-    createScene();
+    hideLegacyRenderingSurface();
+    createRoot();
+    bindInteractions();
+    state.engineStartMs = performance.now();
+    state.breathStartMs = state.engineStartMs;
     cancelAnimationFrame(state.rafId);
-    state.rafId = requestAnimationFrame(frame);
+    state.rafId = requestAnimationFrame(animate);
   }
 
   if (document.readyState === "loading") {
