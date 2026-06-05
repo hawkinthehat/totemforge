@@ -576,7 +576,10 @@
     event.preventDefault();
     const section = FORM_SECTIONS[state.revealed];
     if (!section) return;
-    if (window.formlineHaptics) window.formlineHaptics.strike(nowMs);
+    if (window.formlineHaptics) {
+      window.formlineHaptics.strike(nowMs);
+      window.formlineHaptics.drum();
+    }
     state.snag.hiddenUntil = nowMs + SNAG_HIDE_MS;
     state.revealed += 1;
     state.lastRevealMs = nowMs;
