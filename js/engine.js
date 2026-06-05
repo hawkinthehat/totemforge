@@ -472,8 +472,16 @@
     const nowMs = performance.now();
     if (nowMs < state.snagHiddenUntil) return;
 
+    const sectorIndex = state.revealedCount;
     const sectorNode = revealNextSector();
     if (!sectorNode) return;
+
+    if (typeof window.unlockTotemAudio === "function") window.unlockTotemAudio();
+    if (typeof window.setTotemClickPan === "function") window.setTotemClickPan(event.clientX, nowMs);
+    if (typeof window.playWoodSnap === "function") window.playWoodSnap(event.clientX, sectorIndex % 3);
+    if (typeof window.playTotemFluteStrike === "function") {
+      window.playTotemFluteStrike(SHATTER_MS);
+    }
 
     hideSnag();
     spawnShatterBurst(event.clientX, event.clientY, sectorNode);
