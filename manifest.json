@@ -1,13 +1,13 @@
 {
-  "name": "TotemForge Neural Suite v1.4.0",
-  "short_name": "TotemForge",
-  "description": "Salish-centered vagus breath totem — Neural Suite v1.4.0",
+  "name": "Coast Salish Formline Carving Canvas",
+  "short_name": "Formline Canvas",
+  "description": "A single-screen yellow cedar carving canvas with a steady red cedar sweep.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#070a0f",
-  "theme_color": "#070a0f",
+  "background_color": "#d7a95d",
+  "theme_color": "#d7a95d",
   "icons": [
     {
       "src": "icon-192.png",
