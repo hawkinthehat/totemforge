@@ -2,7 +2,7 @@
  * Coast Salish Formline Carving Canvas offline shell.
  */
 
-const CACHE_NAME = "formline-canvas-v2-static";
+const CACHE_NAME = "formline-canvas-v3-static";
 
 const REQUIRED_URLS = ["index.html", "js/haptics.js", "js/engine.js", "manifest.json"];
 const OPTIONAL_URLS = ["favicon.ico", "icon-192.png", "icon-512.png"];
